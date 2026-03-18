@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('vscode', () => ({
-  commands: {
-    getCommands: vi.fn().mockResolvedValue(['opencode.addContext']),
-    executeCommand: vi.fn().mockResolvedValue(undefined),
+  window: {
+    terminals: [] as any[],
   },
   env: {
     clipboard: {
@@ -12,35 +11,46 @@ vi.mock('vscode', () => ({
   },
 }));
 
+vi.mock('http', () => ({
+  request: vi.fn(),
+}));
+
 import { OpenCodeAdapter } from './OpenCodeAdapter';
 import * as vscode from 'vscode';
+import * as http from 'http';
 import type { ContextBundle } from '../types';
 
 const mockedVscode = vi.mocked(vscode, true);
+const mockedHttp = vi.mocked(http);
 
 describe('OpenCodeAdapter', () => {
   let adapter: OpenCodeAdapter;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Restore default mock return value
-    mockedVscode.commands.getCommands.mockResolvedValue(['opencode.addContext']);
+    (mockedVscode.window as any).terminals = [];
     adapter = new OpenCodeAdapter();
   });
 
-  it('checks availability by looking for opencode commands', async () => {
-    const available = await adapter.isAvailable();
-    expect(available).toBe(true);
-    expect(mockedVscode.commands.getCommands).toHaveBeenCalled();
-  });
-
-  it('returns unavailable when opencode commands not found', async () => {
-    mockedVscode.commands.getCommands.mockResolvedValueOnce(['some.other.command']);
+  it('returns unavailable when no opencode terminal exists', async () => {
     const available = await adapter.isAvailable();
     expect(available).toBe(false);
   });
 
-  it('delivers context via opencode.addContext command', async () => {
+  it('detects opencode terminal by env port', async () => {
+    (mockedVscode.window as any).terminals = [
+      {
+        name: 'opencode',
+        creationOptions: {
+          env: { _EXTENSION_OPENCODE_PORT: '12345' },
+        },
+      },
+    ];
+    const available = await adapter.isAvailable();
+    expect(available).toBe(true);
+  });
+
+  it('falls back to clipboard when no opencode terminal found', async () => {
     const bundle: ContextBundle = {
       url: 'http://localhost:3000',
       timestamp: Date.now(),
@@ -57,31 +67,57 @@ describe('OpenCodeAdapter', () => {
 
     const result = await adapter.deliver(bundle);
     expect(result.success).toBe(true);
-    expect(mockedVscode.commands.executeCommand).toHaveBeenCalledWith(
-      'opencode.addContext',
-      expect.any(Object)
-    );
+    expect(result.message).toContain('not found');
+    expect(mockedVscode.env.clipboard.writeText).toHaveBeenCalled();
   });
 
-  it('falls back to clipboard when opencode is unavailable', async () => {
-    mockedVscode.commands.getCommands.mockResolvedValue(['some.other.command']);
+  it('calls append-prompt when opencode terminal is available', async () => {
+    (mockedVscode.window as any).terminals = [
+      {
+        name: 'opencode',
+        creationOptions: {
+          env: { _EXTENSION_OPENCODE_PORT: '54321' },
+        },
+      },
+    ];
+
+    const mockRes = { statusCode: 200, resume: vi.fn() };
+    const mockReq = {
+      on: vi.fn().mockReturnThis(),
+      write: vi.fn(),
+      end: vi.fn(),
+      destroy: vi.fn(),
+    };
+    mockedHttp.request.mockImplementation((_opts: any, callback: any) => {
+      callback(mockRes);
+      return mockReq as any;
+    });
 
     const bundle: ContextBundle = {
       url: 'http://localhost:3000',
       timestamp: Date.now(),
       element: {
-        html: '<p>Test</p>',
-        parentHtml: '<div><p>Test</p></div>',
-        ancestorPath: 'body > div > p',
-        tag: 'p',
+        html: '<button>Click</button>',
+        parentHtml: '<div><button>Click</button></div>',
+        ancestorPath: 'body > div > button',
+        tag: 'button',
         classes: [],
-        dimensions: { width: 100, height: 20 },
-        accessibility: {},
+        dimensions: { width: 120, height: 34 },
+        accessibility: { name: 'Click', role: 'button' },
       },
     };
 
     const result = await adapter.deliver(bundle);
     expect(result.success).toBe(true);
-    expect(result.message).toContain('clipboard');
+    expect(result.message).toBe('Added to OpenCode prompt');
+    expect(mockedHttp.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostname: 'localhost',
+        port: 54321,
+        path: '/tui/append-prompt',
+        method: 'POST',
+      }),
+      expect.any(Function)
+    );
   });
 });
