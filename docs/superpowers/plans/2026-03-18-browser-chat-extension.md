@@ -1684,15 +1684,18 @@ export async function captureScreenshot(
 
 - [ ] **Step 2: Update inspect-overlay.ts to use shared screenshot utility**
 
-In `src/webview/inspect-overlay.ts`, replace the inline `captureScreenshot` function with an import:
+In `src/webview/inspect-overlay.ts`:
 
-Replace the `async function captureScreenshot()` block with:
+1. Add import at the top of the file (after the existing type imports):
+   ```typescript
+   import { captureScreenshot } from './screenshot';
+   ```
 
-```typescript
-import { captureScreenshot } from './screenshot';
-```
+2. Delete the entire inline `async function captureScreenshot(): Promise<string>` block (approximately 28 lines, from the function declaration through the closing brace).
 
-Then update calls to use `captureScreenshot(iframeDoc!.body, iframe.clientWidth, iframe.clientHeight)`.
+3. Update the two call sites to pass required arguments:
+   - In `handleAddElementClick`: change `captureScreenshot()` to `captureScreenshot(iframeDoc!.body, iframe.clientWidth, iframe.clientHeight)`
+   - In `showTooltip`'s send button handler: same change — `captureScreenshot(iframeDoc!.body, iframe.clientWidth, iframe.clientHeight)`
 
 - [ ] **Step 3: Add onLogsRequest callback to toolbar**
 
@@ -1746,18 +1749,6 @@ Expected: No errors
 ```bash
 git add src/webview/main.ts src/webview/toolbar.ts src/webview/screenshot.ts src/webview/inspect-overlay.ts
 git commit -m "feat: wire inspect overlay, console capture, and screenshot into webview"
-```
-
-- [ ] **Step 2: Verify build succeeds**
-
-Run: `npm run build && npm run typecheck`
-Expected: No errors
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/webview/main.ts
-git commit -m "feat: wire inspect overlay and console capture into webview main entry"
 ```
 
 ---
@@ -2347,7 +2338,9 @@ export function activate(context: vscode.ExtensionContext) {
       case 'addElement:captured':
       case 'action:addLogs':
       case 'action:screenshot':
-        deliverContext(message, currentUrl);
+        deliverContext(message, currentUrl).catch((err) => {
+          console.error('Browser Chat: delivery error', err);
+        });
         break;
     }
   });
