@@ -23,7 +23,11 @@ export interface ToolbarAPI {
 
 export function createToolbar(
   container: HTMLElement,
-  postMessage: PostMessage
+  postMessage: PostMessage,
+  callbacks?: {
+    onLogsRequest?: () => void;
+    onScreenshotRequest?: () => void;
+  }
 ): ToolbarAPI {
   const state: ToolbarState = {
     inspectActive: false,
@@ -149,15 +153,11 @@ export function createToolbar(
 
   // ── Action buttons ────────────────────────────────────────
   btnAddLogs.addEventListener('click', () => {
-    // Chunk 3 (Task 10) will re-wire this with a proper callback
-    // For now, send an empty logs payload to the extension host
-    postMessage({ type: 'action:addLogs', payload: { logs: [] } });
+    callbacks?.onLogsRequest?.();
   });
 
   btnScreenshot.addEventListener('click', () => {
-    // Chunk 3 (Task 10) will re-wire this with a proper callback
-    // For now, send an empty screenshot payload to the extension host
-    postMessage({ type: 'action:screenshot', payload: { dataUrl: '' } });
+    callbacks?.onScreenshotRequest?.();
   });
 
   // ── Overflow menu ─────────────────────────────────────────

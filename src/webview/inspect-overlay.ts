@@ -1,4 +1,5 @@
 import type { WebviewMessage, AccessibilityInfo, SourceLocation } from '../types';
+import { captureScreenshot } from './screenshot';
 
 type PostMessage = (msg: WebviewMessage) => void;
 type Mode = 'inspect' | 'addElement' | 'off';
@@ -132,7 +133,7 @@ export function createInspectOverlay(
     const info = extractElementInfo(el);
 
     // Capture screenshot before sending
-    captureScreenshot().then((screenshotDataUrl) => {
+    captureScreenshot(iframeDoc!.body, iframe.clientWidth, iframe.clientHeight).then((screenshotDataUrl) => {
       postMessage({
         type: 'addElement:captured',
         payload: {
@@ -199,7 +200,7 @@ export function createInspectOverlay(
     tooltip.querySelector('#__bc-send-btn')!.addEventListener('click', (e) => {
       e.stopPropagation();
 
-      captureScreenshot().then((screenshotDataUrl) => {
+      captureScreenshot(iframeDoc!.body, iframe.clientWidth, iframe.clientHeight).then((screenshotDataUrl) => {
         postMessage({
           type: 'inspect:sendToChat',
           payload: {
@@ -311,36 +312,6 @@ export function createInspectOverlay(
 
     // MVP: React only. Vue/Svelte/Angular detection deferred to later iterations.
     return undefined;
-  }
-
-  async function captureScreenshot(): Promise<string> {
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const canvas = await html2canvas(iframeDoc!.body, {
-        useCORS: true,
-        logging: false,
-        width: iframe.clientWidth,
-        height: iframe.clientHeight,
-        windowWidth: iframe.clientWidth,
-        windowHeight: iframe.clientHeight,
-      });
-      const dataUrl = canvas.toDataURL('image/png');
-
-      // Cap at 2MB
-      if (dataUrl.length > 2 * 1024 * 1024) {
-        const scale = Math.sqrt((2 * 1024 * 1024) / dataUrl.length);
-        const scaledCanvas = document.createElement('canvas');
-        scaledCanvas.width = canvas.width * scale;
-        scaledCanvas.height = canvas.height * scale;
-        const ctx = scaledCanvas.getContext('2d')!;
-        ctx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-        return scaledCanvas.toDataURL('image/png');
-      }
-
-      return dataUrl;
-    } catch {
-      return '';
-    }
   }
 
   function truncate(str: string, maxLen: number): string {
