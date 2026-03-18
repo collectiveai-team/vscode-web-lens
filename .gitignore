@@ -1,4 +1,6 @@
 node_modules/
 out/
+webview/main.js
+webview/main.js.map
 *.vsix
 .superpowers/
