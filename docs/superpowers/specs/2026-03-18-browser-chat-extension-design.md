@@ -282,6 +282,9 @@ The `console-capture.ts` script is injected into same-origin iframes alongside t
 
 ```
 vscode-browser-chat/
+├── .github/
+│   └── workflows/
+│       └── release.yml            # Build + release on tag push
 ├── src/
 │   ├── extension.ts              # Entry point, command registration
 │   ├── panel/
@@ -303,7 +306,9 @@ vscode-browser-chat/
 │   └── main.js
 ├── package.json                   # Extension manifest
 ├── tsconfig.json
-└── esbuild.config.js
+├── esbuild.config.js
+├── .vscodeignore                  # Excludes dev files from VSIX
+└── .eslintrc.json
 ```
 
 ## Technology Choices
@@ -313,3 +318,83 @@ vscode-browser-chat/
 - **Screenshot:** html2canvas (no external deps, runs in webview)
 - **Icons:** Material Symbols Outlined (loaded in webview, codicons for extension-level UI)
 - **Testing:** @vscode/test-cli + Mocha for integration tests, vitest for unit tests
+- **Packaging:** @vscode/vsce for VSIX building and Marketplace publishing
+
+## Build & Packaging
+
+### VSIX Build
+
+The extension is packaged as a `.vsix` file using `@vscode/vsce`. Build steps:
+
+1. **Compile TypeScript** — `tsc` for type checking (no emit), esbuild for bundling
+2. **Bundle webview assets** — esbuild bundles `src/webview/*.ts` into `webview/main.js`
+3. **Bundle extension host** — esbuild bundles `src/extension.ts` into `out/extension.js` (externals: `vscode`)
+4. **Package VSIX** — `vsce package` produces `browser-chat-<version>.vsix`
+
+**npm scripts:**
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `build` | `node esbuild.config.js` | Build extension + webview bundles (dev) |
+| `build:prod` | `node esbuild.config.js --production` | Minified production build |
+| `typecheck` | `tsc --noEmit` | Type checking only |
+| `package` | `npm run build:prod && vsce package` | Build + produce .vsix |
+| `publish` | `npm run build:prod && vsce publish` | Build + publish to Marketplace |
+| `test` | `vitest run && vscode-test` | Unit tests + integration tests |
+| `lint` | `eslint src/` | Lint source |
+
+**.vscodeignore:**
+
+```
+.vscode/
+.superpowers/
+src/
+node_modules/
+*.ts
+!out/**
+!webview/**
+tsconfig.json
+esbuild.config.js
+.eslintrc*
+vitest.config.*
+docs/
+```
+
+### GitHub Actions: Build & Release on Tag
+
+A GitHub Actions workflow triggers on version tags (`v*`) to build the VSIX and create a GitHub Release with the artifact attached. Optionally publishes to the VS Code Marketplace if a publish token is configured.
+
+**Workflow:** `.github/workflows/release.yml`
+
+**Trigger:** Push of tags matching `v*` (e.g., `v0.1.0`, `v1.0.0`)
+
+**Jobs:**
+
+1. **build-and-release:**
+   - Checkout code
+   - Setup Node.js (LTS)
+   - Install dependencies (`npm ci`)
+   - Run linting (`npm run lint`)
+   - Run type checking (`npm run typecheck`)
+   - Run tests (`npm run test`)
+   - Build production VSIX (`npm run package`)
+   - Create GitHub Release using the tag, attach the `.vsix` file as a release asset
+   - (Optional) Publish to VS Code Marketplace — runs `vsce publish` only if the `VSCE_PAT` secret is set. If the secret is not configured, this step is skipped and the VSIX is available only via the GitHub Release
+
+**Release flow:**
+
+```
+git tag v0.1.0
+git push origin v0.1.0
+  → GitHub Actions triggers
+  → Lint + typecheck + test
+  → Build .vsix
+  → Create GitHub Release with .vsix attached
+  → Publish to Marketplace (if VSCE_PAT secret configured)
+```
+
+**Secrets required:**
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `VSCE_PAT` | Optional | VS Code Marketplace Personal Access Token. If absent, Marketplace publish step is skipped |
