@@ -14,15 +14,15 @@ A single webview panel contains a minimal toolbar at the top and an iframe below
 
 **Extension Host (Node.js):**
 
-- **BrowserPanelManager** — creates and manages the webview panel lifecycle, handles commands, persists state across panel hide/show
+- **BrowserPanelManager** — creates and manages the webview panel lifecycle, handles commands, persists state across panel hide/show. Persisted state: current URL, navigation history (back/forward stack). Non-persisted (reset on hide/show): inspect mode, add-element mode, console buffer
 - **ContextExtractor** — receives raw DOM data and screenshots from the webview, assembles them into a `ContextBundle`
-- **BackendAdapter** (interface) — abstract interface for delivering context to AI agents. Method: `deliver(bundle: ContextBundle): Promise<void>`
+- **BackendAdapter** (interface) — abstract interface for delivering context to AI agents. Method: `deliver(bundle: ContextBundle): Promise<DeliveryResult>`. Returns `{ success: boolean, message: string }`. The `BrowserPanelManager` is responsible for sending a `toast` message to the webview based on the result — adapters never communicate directly with the webview
 
 **Backend Adapters (all shipped together):**
 
-- **OpenCodeAdapter** — targets OpenCode's VS Code SDK context hooks
-- **OpenChamberAdapter** — targets OpenChamber's VS Code integration
-- **ClipboardAdapter** — universal fallback, copies formatted markdown to clipboard. This is the default
+- **OpenCodeAdapter** — targets OpenCode's VS Code extension. OpenCode exposes a context system via its VS Code SDK where context items can be added via commands (e.g., `opencode.addContext`). The adapter formats the `ContextBundle` as a context item with type `"file"` for HTML snippets and attaches screenshots as image references. The exact command API will be confirmed against the `sdks/vscode` source during implementation; if the command is unavailable (OpenCode not installed), the adapter falls back to ClipboardAdapter behavior and shows a toast
+- **OpenChamberAdapter** — targets OpenChamber's VS Code extension. OpenChamber provides VS Code integration hooks for adding context to conversations. The adapter uses OpenChamber's extension API to inject browser context. As with OpenCode, the exact API will be confirmed against the OpenChamber VS Code extension source during implementation; falls back to ClipboardAdapter if unavailable
+- **ClipboardAdapter** — universal fallback, copies formatted markdown to clipboard (HTML in a fenced code block, source location if available, screenshot saved as temp file with path referenced). This is the default
 
 The user selects the active backend via `browserChat.backend` in extension settings.
 
@@ -83,7 +83,7 @@ Minimal icon-only toolbar (~34px height) matching VS Code's dark theme:
 
 **Left group:** back, forward, reload (Material icons: `arrow_back`, `arrow_forward`, `refresh`)
 
-**Center:** URL bar — editable input, Enter to navigate, displays current iframe URL
+**Center:** URL bar — editable input, Enter to navigate, displays current iframe URL. Updates on iframe-internal navigation (link clicks within the iframe) detected via listening to the iframe's `load` event and reading `contentWindow.location` (same-origin only). For cross-origin iframes, the URL bar shows the last known URL
 
 **Right group:** action icons separated by a thin divider from the overflow menu:
 - `select` — Inspect element (toggle)
@@ -146,12 +146,15 @@ All messages use a discriminated union: `{ type: string, payload: T }`.
 | `nav:forward` | `{}` | Forward button |
 | `nav:reload` | `{}` | Reload button |
 | `inspect:selected` | `{ html, tag, classes, dimensions, accessibility }` | Click in inspect mode |
-| `inspect:sendToChat` | `{ html, metadata }` | Tooltip "Add to chat" button |
-| `addElement:captured` | `{ html, tag, classes, dimensions, accessibility, screenshotDataUrl }` | Click in add-element mode |
+| `inspect:sendToChat` | `{ html, tag, classes, dimensions, accessibility, parentHtml, ancestorPath, sourceLocation?, screenshotDataUrl }` | Tooltip "Add to chat" button — webview captures screenshot before sending |
+| `addElement:captured` | `{ html, tag, classes, dimensions, accessibility, parentHtml, ancestorPath, sourceLocation?, screenshotDataUrl }` | Click in add-element mode |
 | `action:addLogs` | `{ logs: ConsoleEntry[] }` | "Add logs" button |
 | `action:screenshot` | `{ dataUrl: string }` | "Screenshot" button |
 | `iframe:loaded` | `{ url, title, canInject: boolean }` | iframe load complete |
 | `iframe:error` | `{ url, error: string }` | iframe load failure |
+| `menu:copyHtml` | `{ html: string }` | Overflow menu "Copy HTML" |
+| `menu:clearSelection` | `{}` | Overflow menu "Clear selection" |
+| `menu:openSettings` | `{}` | Overflow menu "Settings" |
 
 ### Extension Host -> Webview
 
@@ -193,7 +196,7 @@ interface ContextBundle {
     };
   };
 
-  screenshot: {
+  screenshot?: {
     dataUrl: string;        // base64 PNG
     width: number;
     height: number;
@@ -225,10 +228,20 @@ This works only in development builds (where frameworks annotate DOM nodes with 
 | Scenario | HTML | Screenshot | Console | Source location |
 |----------|------|------------|---------|-----------------|
 | Same-origin | Full outerHTML + parent | html2canvas on iframe | console.* proxy | Framework metadata lookup |
-| Cross-origin | `document.activeElement` only | html2canvas on webview | Not available | Not available |
-| iframe blocked | None | Screenshot of error state | Not available | Not available |
+| Cross-origin | `document.activeElement` only | Not available (html2canvas cannot render cross-origin iframe content) | Not available | Not available |
+| iframe blocked | None | Not available | Not available | Not available |
 
-The system always captures what it can. Partial bundles are valid — the backend adapter formats whatever is available.
+The system always captures what it can. Both `element` and `screenshot` are optional on `ContextBundle` — partial bundles are valid. If screenshot capture fails (html2canvas error, memory constraints), the bundle is sent without it and the user sees a toast warning. The backend adapter formats whatever is available.
+
+### Console Capture
+
+The `console-capture.ts` script is injected into same-origin iframes alongside the inspect overlay. It works as follows:
+
+- **Installation:** On iframe load (same-origin only), the script wraps `console.log`, `console.warn`, and `console.error` with proxy functions that forward to the original implementation and buffer entries
+- **Buffering:** Entries are stored in a circular buffer (max 200 entries, ~50KB cap). Oldest entries are evicted when the limit is reached
+- **On navigate:** When the iframe navigates to a new page, the buffer is cleared and the proxy is re-installed (if same-origin)
+- **On capture:** When the user clicks "Add logs to chat", the current buffer contents are read, formatted as `ConsoleEntry[]`, and sent via the `action:addLogs` message. The buffer is not cleared after capture (user may want to send again)
+- **Cross-origin:** Not available. The toolbar button is disabled with a tooltip explaining why
 
 ## Extension Configuration
 
@@ -263,6 +276,7 @@ The system always captures what it can. Partial bundles are valid — the backen
 3. **Console log capture:** Only available for same-origin iframes where the console proxy can be injected.
 4. **Source location:** Only available in development builds of supported frameworks (React for MVP). Production builds strip debug annotations.
 5. **Screenshot fidelity:** html2canvas renders an approximation of the page — complex CSS (filters, backdrop-blur, some transforms) may not render perfectly.
+6. **Payload size:** `element.html` and `element.parentHtml` are capped at 50KB each. If the outerHTML exceeds this, it is truncated with a `<!-- truncated -->` marker. Screenshot data URLs are capped at 2MB; larger screenshots are downscaled before encoding.
 
 ## Project Structure
 
