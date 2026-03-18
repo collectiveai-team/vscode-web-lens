@@ -1,0 +1,17 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    // MARK: Plugins
+    "plugin": [
+        // @jedzill4: Patch for remove opencode dummy replacement of the string "opencode" with "Claude" when using
+        // antropic models for older compatibility. **We should check future opencode fixes**
+        // source: https://github.com/anomalyco/opencode/issues/10567#issuecomment-3973622179
+        "@ex-machina/opencode-anthropic-auth",
+        "@plannotator/opencode@latest"
+    ],
+    "permission": {
+        // MARK: Skills
+        "skill": {
+            "vscode-*": "allow"
+        }
+    }
+}
