@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('vscode', () => ({
+  commands: {
+    getCommands: vi.fn().mockResolvedValue(['openchamber.addToContext', 'openchamber.focusChat']),
+  },
   workspace: {
     getConfiguration: vi.fn().mockReturnValue({
       get: vi.fn().mockReturnValue(undefined),
@@ -73,21 +76,18 @@ describe('OpenChamberAdapter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedVscode.commands.getCommands.mockResolvedValue(['openchamber.addToContext', 'openchamber.focusChat']);
     adapter = new OpenChamberAdapter();
   });
 
-  it('checks availability via health endpoint', async () => {
+  it('checks availability via extension commands + health endpoint', async () => {
     mockHttpSuccess(200);
     const available = await adapter.isAvailable();
     expect(available).toBe(true);
-    expect(mockedHttp.request).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/health' }),
-      expect.any(Function)
-    );
   });
 
-  it('returns unavailable when server not reachable', async () => {
-    mockHttpError();
+  it('returns unavailable when extension not installed', async () => {
+    mockedVscode.commands.getCommands.mockResolvedValue(['some.other.command']);
     const available = await adapter.isAvailable();
     expect(available).toBe(false);
   });
@@ -103,7 +103,7 @@ describe('OpenChamberAdapter', () => {
     mockHttpError();
     const result = await adapter.deliver(testBundle);
     expect(result.success).toBe(true);
-    expect(result.message).toContain('not reachable');
+    expect(result.message).toContain('not available');
     expect(mockedVscode.env.clipboard.writeText).toHaveBeenCalled();
   });
 });

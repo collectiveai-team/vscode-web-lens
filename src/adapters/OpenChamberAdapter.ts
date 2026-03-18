@@ -5,34 +5,33 @@ import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
 
 /**
- * Delivers browser context to OpenChamber.
+ * Delivers browser context to OpenChamber (fedaykindev.openchamber).
  *
- * OpenChamber is a desktop/web GUI for OpenCode — it runs an OpenCode server
- * internally. The integration uses the same HTTP API as OpenCodeAdapter
- * but discovers the server differently:
- * - Checks for a configurable port in extension settings
- * - Falls back to the default OpenCode server port (4096)
+ * OpenChamber manages an OpenCode server internally. We discover the
+ * server URL from the `openchamber.apiUrl` setting, or try the default
+ * port (4096). Context is delivered via POST /tui/append-prompt.
+ *
+ * Availability is checked by looking for the `openchamber.addToContext`
+ * command (registered by the OpenChamber extension) + server reachability.
  */
 export class OpenChamberAdapter implements BackendAdapter {
   readonly name = 'openchamber';
   private fallback = new ClipboardAdapter();
 
   async deliver(bundle: ContextBundle): Promise<DeliveryResult> {
-    const port = this.getPort();
-
-    // Check if the server is reachable
-    const reachable = await this.isServerReachable(port);
-    if (!reachable) {
+    const available = await this.isAvailable();
+    if (!available) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,
-        message: `OpenChamber not reachable on port ${port} — ${result.message.toLowerCase()}`,
+        message: `OpenChamber not available — ${result.message.toLowerCase()}`,
       };
     }
 
     try {
+      const { hostname, port } = this.getServerAddress();
       const text = this.formatContext(bundle);
-      await this.appendPrompt(port, text);
+      await this.appendPrompt(hostname, port, text);
       return { success: true, message: 'Added to OpenChamber prompt' };
     } catch (err) {
       const result = await this.fallback.deliver(bundle);
@@ -44,47 +43,61 @@ export class OpenChamberAdapter implements BackendAdapter {
   }
 
   async isAvailable(): Promise<boolean> {
-    const port = this.getPort();
-    return this.isServerReachable(port);
+    try {
+      // Check if the OpenChamber extension is installed
+      const commands = await vscode.commands.getCommands(true);
+      const hasExtension = commands.some((cmd) => cmd.startsWith('openchamber.'));
+      if (!hasExtension) return false;
+
+      // Check if the server is reachable
+      const { hostname, port } = this.getServerAddress();
+      return await this.isServerReachable(hostname, port);
+    } catch {
+      return false;
+    }
   }
 
-  private getPort(): number {
-    const config = vscode.workspace.getConfiguration('browserChat');
-    // Allow user to configure OpenChamber's port if not using default
-    return config.get<number>('openchamberPort') || 4096;
+  private getServerAddress(): { hostname: string; port: number } {
+    // Read OpenChamber's own apiUrl setting
+    const config = vscode.workspace.getConfiguration('openchamber');
+    const apiUrl = config.get<string>('apiUrl') || '';
+
+    if (apiUrl) {
+      try {
+        const url = new URL(apiUrl);
+        return {
+          hostname: url.hostname || 'localhost',
+          port: parseInt(url.port, 10) || 4096,
+        };
+      } catch {
+        // Invalid URL, fall through to default
+      }
+    }
+
+    return { hostname: 'localhost', port: 4096 };
   }
 
-  private isServerReachable(port: number): Promise<boolean> {
+  private isServerReachable(hostname: string, port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const req = http.request(
-        {
-          hostname: 'localhost',
-          port,
-          path: '/health',
-          method: 'GET',
-          timeout: 1500,
-        },
+        { hostname, port, path: '/health', method: 'GET', timeout: 1500 },
         (res) => {
           resolve(res.statusCode === 200);
           res.resume();
         }
       );
       req.on('error', () => resolve(false));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
+      req.on('timeout', () => { req.destroy(); resolve(false); });
       req.end();
     });
   }
 
-  private appendPrompt(port: number, text: string): Promise<void> {
+  private appendPrompt(hostname: string, port: number, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const body = JSON.stringify({ text });
       const req = http.request(
         {
-          hostname: 'localhost',
-          port,
+          hostname, port,
           path: '/tui/append-prompt',
           method: 'POST',
           headers: {
@@ -102,12 +115,8 @@ export class OpenChamberAdapter implements BackendAdapter {
           res.resume();
         }
       );
-
       req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('OpenChamber server timeout'));
-      });
+      req.on('timeout', () => { req.destroy(); reject(new Error('OpenChamber server timeout')); });
       req.write(body);
       req.end();
     });

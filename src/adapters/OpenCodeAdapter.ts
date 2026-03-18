@@ -5,57 +5,77 @@ import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
 
 /**
- * Delivers browser context to OpenCode by appending it to the active
- * OpenCode terminal's prompt via the OpenCode HTTP server API.
+ * Delivers browser context to OpenCode.
  *
- * Discovery: OpenCode's VS Code extension runs `opencode --port <port>`
- * in a terminal and stores the port in `_EXTENSION_OPENCODE_PORT` env var.
- * We find that terminal, extract the port, and POST to `/tui/append-prompt`.
+ * Supports two VS Code extensions:
+ * 1. Official OpenCode extension (anomalyco.opencode) — discovers port
+ *    from terminal env `_EXTENSION_OPENCODE_PORT`
+ * 2. OpenCode Sidebar TUI (islee23520.opencode-sidebar-tui) — uses the
+ *    `opencodeTui.sendToTerminal` command to send text, or HTTP API
+ *    if `opencodeTui.enableHttpApi` is enabled
+ *
+ * Both use the OpenCode server's /tui/append-prompt HTTP endpoint.
  */
 export class OpenCodeAdapter implements BackendAdapter {
   readonly name = 'opencode';
   private fallback = new ClipboardAdapter();
 
   async deliver(bundle: ContextBundle): Promise<DeliveryResult> {
+    const text = this.formatContext(bundle);
+
+    // Strategy 1: Try sending via opencodeTui.sendToTerminal command
+    const hasSidebarTui = await this.hasSidebarTuiExtension();
+    if (hasSidebarTui) {
+      try {
+        await vscode.commands.executeCommand('opencodeTui.sendToTerminal', text);
+        return { success: true, message: 'Sent to OpenCode' };
+      } catch {
+        // Fall through to HTTP API
+      }
+    }
+
+    // Strategy 2: Try HTTP API via terminal port discovery
     const port = this.findOpenCodePort();
-
-    if (!port) {
-      const result = await this.fallback.deliver(bundle);
-      return {
-        success: result.success,
-        message: `OpenCode terminal not found — ${result.message.toLowerCase()}`,
-      };
+    if (port) {
+      try {
+        await this.appendPrompt(port, text);
+        return { success: true, message: 'Added to OpenCode prompt' };
+      } catch {
+        // Fall through to clipboard
+      }
     }
 
-    try {
-      const text = this.formatContext(bundle);
-      await this.appendPrompt(port, text);
-      return { success: true, message: 'Added to OpenCode prompt' };
-    } catch (err) {
-      const result = await this.fallback.deliver(bundle);
-      return {
-        success: result.success,
-        message: `OpenCode error, fell back to clipboard`,
-      };
-    }
+    // Strategy 3: Clipboard fallback
+    const result = await this.fallback.deliver(bundle);
+    return {
+      success: result.success,
+      message: `OpenCode not found — ${result.message.toLowerCase()}`,
+    };
   }
 
   async isAvailable(): Promise<boolean> {
-    return this.findOpenCodePort() !== null;
+    // Check for sidebar TUI extension
+    if (await this.hasSidebarTuiExtension()) return true;
+    // Check for official extension terminal
+    if (this.findOpenCodePort() !== null) return true;
+    return false;
+  }
+
+  private async hasSidebarTuiExtension(): Promise<boolean> {
+    try {
+      const commands = await vscode.commands.getCommands(true);
+      return commands.includes('opencodeTui.sendToTerminal');
+    } catch {
+      return false;
+    }
   }
 
   private findOpenCodePort(): number | null {
     for (const terminal of vscode.window.terminals) {
-      // OpenCode's VS Code extension stores the port in the terminal's env
       const creationOptions = terminal.creationOptions as vscode.TerminalOptions;
       const env = creationOptions?.env;
       if (env?.['_EXTENSION_OPENCODE_PORT']) {
         return parseInt(env['_EXTENSION_OPENCODE_PORT'], 10);
-      }
-      // Also check by terminal name as fallback
-      if (terminal.name === 'opencode') {
-        // If we can't get the port from env, try the default
-        return null;
       }
     }
     return null;
@@ -82,15 +102,11 @@ export class OpenCodeAdapter implements BackendAdapter {
           } else {
             reject(new Error(`OpenCode server returned ${res.statusCode}`));
           }
-          res.resume(); // drain response
+          res.resume();
         }
       );
-
       req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error('OpenCode server timeout'));
-      });
+      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
       req.write(body);
       req.end();
     });
