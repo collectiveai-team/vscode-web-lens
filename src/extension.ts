@@ -105,8 +105,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('browserChat.open', () => {
-      panelManager!.open();
+    vscode.commands.registerCommand('browserChat.open', async () => {
+      await panelManager!.open();
     }),
     vscode.commands.registerCommand('browserChat.openUrl', async () => {
       const url = await vscode.window.showInputBox({
@@ -122,7 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
         },
       });
       if (url) {
-        panelManager!.open();
+        await panelManager!.open();
         panelManager!.postMessage({ type: 'navigate:url', payload: { url } });
       }
     }),

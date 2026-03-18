@@ -2,7 +2,6 @@ import type { ExtensionMessage, ConsoleEntry } from '../types';
 import { createToolbar } from './toolbar';
 import { createInspectOverlay } from './inspect-overlay';
 import { createConsoleCapture } from './console-capture';
-import { captureScreenshot } from './screenshot';
 
 // VS Code webview API
 declare function acquireVsCodeApi(): {
@@ -28,26 +27,17 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
     postMessage({ type: 'action:addLogs', payload: { logs: entries } });
   },
   onScreenshotRequest() {
-    const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
-    try {
-      if (iframe.contentDocument?.body) {
-        captureScreenshot(iframe.contentDocument.body, iframe.clientWidth, iframe.clientHeight).then(
-          (dataUrl) => {
-            postMessage({ type: 'action:screenshot', payload: { dataUrl } });
-          }
-        );
-      }
-    } catch {
-      // Cross-origin — can't capture
-      postMessage({ type: 'action:screenshot', payload: { dataUrl: '' } });
-    }
+    // Request screenshot from the inject script inside the iframe
+    overlay.requestScreenshot().then((dataUrl) => {
+      postMessage({ type: 'action:screenshot', payload: { dataUrl } });
+    });
   },
 });
 
 // ── Get iframe reference ────────────────────────────────────
 const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
 
-// ── Initialize inspect overlay ──────────────────────────────
+// ── Initialize inspect overlay (message relay) ──────────────
 const overlay = createInspectOverlay(iframe, postMessage);
 
 // Sync toolbar state changes with overlay mode
@@ -63,26 +53,28 @@ toolbar.onStateChange((state) => {
 
 // ── iframe load handler ─────────────────────────────────────
 iframe.addEventListener('load', () => {
+  // With the proxy approach, the iframe content is loaded through our proxy
+  // so it appears same-origin. But we keep the try/catch for safety.
   let url = '';
   let title = '';
-  let canInject = false;
+  let canInject = true; // Proxy always injects
 
   try {
-    // Same-origin: we can access contentWindow.location
     url = iframe.contentWindow?.location.href || '';
     title = iframe.contentDocument?.title || '';
-    canInject = true;
   } catch {
-    // Cross-origin: use the last known URL
     url = iframe.src;
     canInject = false;
   }
 
-  if (url && url !== 'about:blank') {
-    toolbar.setUrl(url);
+  // Extract the original URL from the proxy URL if present
+  const originalUrl = extractOriginalUrl(url);
+
+  if (originalUrl && originalUrl !== 'about:blank') {
+    toolbar.setUrl(originalUrl);
     postMessage({
       type: 'iframe:loaded',
-      payload: { url, title, canInject },
+      payload: { url: originalUrl, title, canInject },
     });
   }
 
@@ -91,7 +83,6 @@ iframe.addEventListener('load', () => {
     try {
       const iframeConsole = (iframe.contentWindow as any)?.console as Console | undefined;
       if (iframeConsole) {
-        // Detach previous capture if any
         consoleCapture?.detach();
         consoleCapture = createConsoleCapture(iframeConsole);
       }
@@ -102,47 +93,43 @@ iframe.addEventListener('load', () => {
 });
 
 iframe.addEventListener('error', () => {
+  const originalUrl = extractOriginalUrl(iframe.src);
   postMessage({
     type: 'iframe:error',
-    payload: { url: iframe.src, error: 'Failed to load page' },
+    payload: { url: originalUrl || iframe.src, error: 'Failed to load page' },
   });
 });
 
 // ── Listen for messages from extension host ─────────────────
 window.addEventListener('message', async (event: MessageEvent) => {
-  const message = event.data as ExtensionMessage;
+  const message = event.data;
   if (!message || !message.type) return;
 
-  switch (message.type) {
+  // Skip messages from the inject script (bc: prefix) — handled by inspect-overlay
+  if (typeof message.type === 'string' && message.type.startsWith('bc:')) return;
+
+  const msg = message as ExtensionMessage;
+
+  switch (msg.type) {
     case 'navigate:url':
-      iframe.src = message.payload.url;
-      toolbar.setUrl(message.payload.url);
+      iframe.src = msg.payload.url;
+      // Show the original URL in the toolbar, not the proxy URL
+      toolbar.setUrl(extractOriginalUrl(msg.payload.url) || msg.payload.url);
       break;
 
     case 'mode:inspect':
-      toolbar.setInspectActive(message.payload.enabled);
-      overlay.setMode(message.payload.enabled ? 'inspect' : 'off');
+      toolbar.setInspectActive(msg.payload.enabled);
+      overlay.setMode(msg.payload.enabled ? 'inspect' : 'off');
       break;
 
     case 'mode:addElement':
-      toolbar.setAddElementActive(message.payload.enabled);
-      overlay.setMode(message.payload.enabled ? 'addElement' : 'off');
+      toolbar.setAddElementActive(msg.payload.enabled);
+      overlay.setMode(msg.payload.enabled ? 'addElement' : 'off');
       break;
 
     case 'screenshot:request': {
-      try {
-        if (iframe.contentDocument?.body) {
-          const dataUrl = await captureScreenshot(
-            iframe.contentDocument.body,
-            iframe.clientWidth,
-            iframe.clientHeight
-          );
-          postMessage({ type: 'action:screenshot', payload: { dataUrl } });
-        }
-      } catch {
-        // Cross-origin — can't capture
-        postMessage({ type: 'action:screenshot', payload: { dataUrl: '' } });
-      }
+      const dataUrl = await overlay.requestScreenshot();
+      postMessage({ type: 'action:screenshot', payload: { dataUrl } });
       break;
     }
 
@@ -151,12 +138,28 @@ window.addEventListener('message', async (event: MessageEvent) => {
       break;
 
     case 'toast':
-      showToast(message.payload.message, message.payload.toastType);
+      showToast(msg.payload.message, msg.payload.toastType);
       break;
   }
 });
 
-// ── Toast helper ────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────
+
+/**
+ * Extract the original target URL from a proxy URL.
+ * Proxy URLs look like: http://127.0.0.1:<port>/?url=<encodedTargetUrl>
+ */
+function extractOriginalUrl(proxyUrl: string): string {
+  try {
+    const parsed = new URL(proxyUrl);
+    const urlParam = parsed.searchParams.get('url');
+    if (urlParam) return urlParam;
+  } catch {
+    // Not a valid URL — return as-is
+  }
+  return proxyUrl;
+}
+
 function showToast(message: string, toastType: 'success' | 'error') {
   const toast = document.createElement('div');
   toast.className = `toast ${toastType}`;

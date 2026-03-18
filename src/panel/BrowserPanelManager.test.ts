@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Mock the ProxyServer module
+vi.mock('../proxy/ProxyServer', () => ({
+  ProxyServer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(9876),
+    stop: vi.fn().mockResolvedValue(undefined),
+    getPort: vi.fn().mockReturnValue(9876),
+    getProxiedUrl: vi.fn((url: string) => `http://127.0.0.1:9876/?url=${encodeURIComponent(url)}`),
+  })),
+}));
+
 // Mock vscode module
 vi.mock('vscode', () => ({
   window: {
@@ -43,15 +53,15 @@ const mockedVscode = vi.mocked(vscode, true);
 
 describe('BrowserPanelManager', () => {
   let manager: BrowserPanelManager;
-  const mockExtensionUri = '/fake/extension/path' as any;
+  const mockExtensionUri = { fsPath: '/fake/extension/path' } as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
     manager = new BrowserPanelManager(mockExtensionUri);
   });
 
-  it('creates a webview panel on open', () => {
-    manager.open();
+  it('creates a webview panel on open', async () => {
+    await manager.open();
     expect(mockedVscode.window.createWebviewPanel).toHaveBeenCalledWith(
       'browserChat',
       'Browser Chat',
@@ -63,14 +73,14 @@ describe('BrowserPanelManager', () => {
     );
   });
 
-  it('reuses existing panel on second open call', () => {
-    manager.open();
-    manager.open();
+  it('reuses existing panel on second open call', async () => {
+    await manager.open();
+    await manager.open();
     expect(mockedVscode.window.createWebviewPanel).toHaveBeenCalledTimes(1);
   });
 
-  it('disposes panel correctly', () => {
-    manager.open();
+  it('disposes panel correctly', async () => {
+    await manager.open();
     manager.dispose();
   });
 });

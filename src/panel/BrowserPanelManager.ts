@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { WebviewMessage, ExtensionMessage } from '../types';
+import { ProxyServer } from '../proxy/ProxyServer';
 
 interface PanelState {
   url: string;
@@ -12,6 +13,7 @@ export class BrowserPanelManager {
   private state: PanelState;
   private readonly extensionUri: vscode.Uri;
   private messageHandler: ((msg: WebviewMessage) => void) | undefined;
+  private proxyServer: ProxyServer;
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
@@ -21,13 +23,17 @@ export class BrowserPanelManager {
       history: [],
       historyIndex: -1,
     };
+    this.proxyServer = new ProxyServer(extensionUri.fsPath);
   }
 
-  open() {
+  async open() {
     if (this.panel) {
       this.panel.reveal();
       return;
     }
+
+    // Start the proxy server before creating the panel
+    await this.proxyServer.start();
 
     this.panel = vscode.window.createWebviewPanel(
       'browserChat',
@@ -51,10 +57,14 @@ export class BrowserPanelManager {
 
     this.panel.onDidDispose(() => {
       this.panel = undefined;
+      this.proxyServer.stop().catch(() => {
+        // Ignore stop errors on dispose
+      });
     });
 
-    // Navigate to default URL
-    this.postMessage({ type: 'navigate:url', payload: { url: this.state.url } });
+    // Navigate to default URL (through proxy)
+    const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
+    this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
   }
 
   onMessage(handler: (msg: WebviewMessage) => void) {
@@ -68,6 +78,9 @@ export class BrowserPanelManager {
   dispose() {
     this.panel?.dispose();
     this.panel = undefined;
+    this.proxyServer.stop().catch(() => {
+      // Ignore stop errors on dispose
+    });
   }
 
   private handleMessage(message: WebviewMessage) {
@@ -82,7 +95,7 @@ export class BrowserPanelManager {
         this.goForward();
         break;
       case 'nav:reload':
-        this.postMessage({ type: 'navigate:url', payload: { url: this.state.url } });
+        this.reload();
         break;
       case 'iframe:loaded':
         this.onIframeLoaded(message.payload.url);
@@ -110,14 +123,18 @@ export class BrowserPanelManager {
     this.state.history.push(url);
     this.state.historyIndex = this.state.history.length - 1;
     this.state.url = url;
-    this.postMessage({ type: 'navigate:url', payload: { url } });
+
+    // Route through proxy
+    const proxiedUrl = this.proxyServer.getProxiedUrl(url);
+    this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
   }
 
   private goBack() {
     if (this.state.historyIndex > 0) {
       this.state.historyIndex--;
       this.state.url = this.state.history[this.state.historyIndex];
-      this.postMessage({ type: 'navigate:url', payload: { url: this.state.url } });
+      const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
+      this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
     }
   }
 
@@ -125,13 +142,19 @@ export class BrowserPanelManager {
     if (this.state.historyIndex < this.state.history.length - 1) {
       this.state.historyIndex++;
       this.state.url = this.state.history[this.state.historyIndex];
-      this.postMessage({ type: 'navigate:url', payload: { url: this.state.url } });
+      const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
+      this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
     }
+  }
+
+  private reload() {
+    const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
+    this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
   }
 
   private onIframeLoaded(url: string) {
     if (url !== this.state.url) {
-      // iframe navigated internally
+      // iframe navigated internally — update history with the original URL
       this.navigate(url);
     }
   }
@@ -158,6 +181,7 @@ export class BrowserPanelManager {
     script-src 'nonce-${nonce}';
     frame-src http: https:;
     img-src ${webview.cspSource} https: data:;
+    connect-src http: https:;
   ">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
   <link href="${styleUri}" rel="stylesheet">
