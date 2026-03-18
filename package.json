@@ -53,7 +53,7 @@
   "scripts": {
     "build": "node esbuild.config.js",
     "build:prod": "node esbuild.config.js --production",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "package": "npm run build:prod && vsce package",
     "publish": "npm run build:prod && vsce publish",
     "test": "vitest run && vscode-test",
