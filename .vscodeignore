@@ -1,13 +1,9 @@
-.vscode/
-.superpowers/
-src/
-node_modules/
-*.ts
-!out/**
-!webview/**
-tsconfig.json
-esbuild.config.js
-.eslintrc*
-vitest.config.*
-docs/
-.github/
+# Exclude everything by default
+**
+
+# Include production files
+!package.json
+!out/extension.js
+!webview/index.html
+!webview/main.js
+!webview/main.css
