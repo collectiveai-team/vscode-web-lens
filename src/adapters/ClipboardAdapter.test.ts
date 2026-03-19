@@ -6,6 +6,22 @@ vi.mock('vscode', () => ({
       writeText: vi.fn().mockResolvedValue(undefined),
     },
   },
+  workspace: {
+    getConfiguration: vi.fn().mockReturnValue({
+      get: vi.fn().mockReturnValue('.tmp'),
+    }),
+    workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
+  },
+}));
+
+vi.mock('fs', () => ({
+  existsSync: vi.fn().mockReturnValue(true),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  readFileSync: vi.fn().mockReturnValue(''),
+  appendFileSync: vi.fn(),
+  readdirSync: vi.fn().mockReturnValue([]),
+  unlinkSync: vi.fn(),
 }));
 
 import { ClipboardAdapter } from './ClipboardAdapter';
@@ -22,7 +38,7 @@ describe('ClipboardAdapter', () => {
     adapter = new ClipboardAdapter();
   });
 
-  it('copies element HTML to clipboard as markdown', async () => {
+  it('copies file paths to clipboard', async () => {
     const bundle: ContextBundle = {
       url: 'http://localhost:3000',
       timestamp: Date.now(),
@@ -40,15 +56,15 @@ describe('ClipboardAdapter', () => {
     const result = await adapter.deliver(bundle);
 
     expect(result.success).toBe(true);
+    expect(result.message).toBe('File paths copied to clipboard');
     expect(mockedVscode.env.clipboard.writeText).toHaveBeenCalledTimes(1);
 
     const clipboardContent = (mockedVscode.env.clipboard.writeText as any).mock.calls[0][0];
-    expect(clipboardContent).toContain('http://localhost:3000');
-    expect(clipboardContent).toContain('<button class="cta">Click</button>');
-    expect(clipboardContent).toContain('body > div > button.cta');
+    expect(clipboardContent).toContain('Context:');
+    expect(clipboardContent).toMatch(/browser-context-\d+\.txt/);
   });
 
-  it('includes source location when available', async () => {
+  it('includes screenshot path when screenshot is present', async () => {
     const bundle: ContextBundle = {
       url: 'http://localhost:3000',
       timestamp: Date.now(),
@@ -60,15 +76,17 @@ describe('ClipboardAdapter', () => {
         classes: [],
         dimensions: { top: 0, left: 0, width: 120, height: 34 },
         accessibility: {},
-        sourceLocation: { filePath: 'src/App.tsx', line: 42 },
       },
+      screenshot: { dataUrl: 'data:image/png;base64,abc', width: 800, height: 600 },
     };
 
     const result = await adapter.deliver(bundle);
 
     expect(result.success).toBe(true);
     const clipboardContent = (mockedVscode.env.clipboard.writeText as any).mock.calls[0][0];
-    expect(clipboardContent).toContain('src/App.tsx:42');
+    expect(clipboardContent).toContain('Screenshot:');
+    expect(clipboardContent).toMatch(/browser-screenshot-\d+\.png/);
+    expect(clipboardContent).toContain('Context:');
   });
 
   it('handles screenshot-only bundle', async () => {
@@ -80,5 +98,10 @@ describe('ClipboardAdapter', () => {
 
     const result = await adapter.deliver(bundle);
     expect(result.success).toBe(true);
+    expect(result.message).toBe('File paths copied to clipboard');
+
+    const clipboardContent = (mockedVscode.env.clipboard.writeText as any).mock.calls[0][0];
+    expect(clipboardContent).toContain('Screenshot:');
+    expect(clipboardContent).toContain('Context:');
   });
 });
