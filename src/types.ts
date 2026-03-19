@@ -15,7 +15,9 @@ export type WebviewMessage =
   | { type: 'iframe:error'; payload: { url: string; error: string } }
   | { type: 'menu:copyHtml'; payload: { html: string } }
   | { type: 'menu:clearSelection'; payload: Record<string, never> }
-  | { type: 'menu:openSettings'; payload: Record<string, never> };
+  | { type: 'menu:openSettings'; payload: Record<string, never> }
+  | { type: 'backend:request'; payload: Record<string, never> }
+  | { type: 'backend:select'; payload: { backend: string } };
 
 // Extension Host -> Webview
 export type ExtensionMessage =
@@ -24,7 +26,9 @@ export type ExtensionMessage =
   | { type: 'mode:addElement'; payload: { enabled: boolean } }
   | { type: 'screenshot:request'; payload: Record<string, never> }
   | { type: 'config:update'; payload: { backend: string } }
-  | { type: 'toast'; payload: { message: string; toastType: 'success' | 'error' } };
+  | { type: 'toast'; payload: { message: string; toastType: 'success' | 'error' } }
+  | { type: 'backend:state'; payload: { active: string; available: Record<string, boolean> } }
+  | { type: 'theme:update'; payload: { kind: 'dark' | 'light' } };
   // Note: spec uses `type` for toast payload, but we use `toastType` to avoid
   // collision with the message discriminant `type` field.
 
