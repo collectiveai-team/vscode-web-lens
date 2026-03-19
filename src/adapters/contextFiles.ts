@@ -238,3 +238,51 @@ export function buildAtReferences(result: SaveResult): string {
 
   return refs.join(' ');
 }
+
+/**
+ * Write text to a temp file, open it in the editor with all text selected,
+ * execute a VS Code command that reads from the active selection, then
+ * close the temp editor and clean up.
+ *
+ * Used by adapters that inject context via selection-reading commands
+ * (e.g., openchamber.addToContext, chatgpt.addToThread).
+ */
+export async function sendViaSelectionCommand(text: string, commandId: string): Promise<void> {
+  const tmpDir = os.tmpdir();
+  const tmpFile = path.join(tmpDir, `.ref`);
+  fs.writeFileSync(tmpFile, text, 'utf8');
+
+  try {
+    const previousEditor = vscode.window.activeTextEditor;
+
+    const doc = await vscode.workspace.openTextDocument(tmpFile);
+    const editor = await vscode.window.showTextDocument(doc, {
+      viewColumn: vscode.ViewColumn.Active,
+      preserveFocus: false,
+      preview: true,
+    });
+
+    const fullRange = new vscode.Range(
+      doc.positionAt(0),
+      doc.positionAt(doc.getText().length)
+    );
+    editor.selection = new vscode.Selection(fullRange.start, fullRange.end);
+
+    await vscode.commands.executeCommand(commandId);
+
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+
+    if (previousEditor?.document) {
+      await vscode.window.showTextDocument(previousEditor.document, {
+        viewColumn: previousEditor.viewColumn,
+        preserveFocus: false,
+      });
+    }
+  } finally {
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
