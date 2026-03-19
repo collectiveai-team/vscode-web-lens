@@ -63,6 +63,9 @@ export function createInspectOverlay(
               ancestorPath: data.payload.ancestorPath,
               sourceLocation: data.payload.sourceLocation,
               screenshotDataUrl,
+              attributes: data.payload.attributes,
+              innerText: data.payload.innerText,
+              computedStyles: data.payload.computedStyles,
             },
           });
         });
@@ -83,6 +86,9 @@ export function createInspectOverlay(
               ancestorPath: data.payload.ancestorPath,
               sourceLocation: data.payload.sourceLocation,
               screenshotDataUrl,
+              attributes: data.payload.attributes,
+              innerText: data.payload.innerText,
+              computedStyles: data.payload.computedStyles,
             },
           });
         });
