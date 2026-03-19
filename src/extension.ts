@@ -22,6 +22,26 @@ function getAdapter(): BackendAdapter {
   return adapters[backendName] || adapters.clipboard;
 }
 
+async function getBackendState(): Promise<{ active: string; available: Record<string, boolean> }> {
+  const config = vscode.workspace.getConfiguration('browserChat');
+  const active = config.get<string>('backend') || 'clipboard';
+
+  const available: Record<string, boolean> = {};
+  const timeout = (ms: number) => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms));
+
+  await Promise.all(
+    Object.entries(adapters).map(async ([name, adapter]) => {
+      try {
+        available[name] = await Promise.race([adapter.isAvailable(), timeout(3000)]);
+      } catch {
+        available[name] = false;
+      }
+    })
+  );
+
+  return { active, available };
+}
+
 async function deliverContext(message: WebviewMessage, url: string) {
   const adapter = getAdapter();
   let result;
@@ -87,6 +107,24 @@ export function activate(context: vscode.ExtensionContext) {
           console.error('Browser Chat: delivery error', err);
         });
         break;
+      case 'backend:request': {
+        getBackendState().then((state) => {
+          panelManager?.postMessage({ type: 'backend:state', payload: state });
+        });
+        break;
+      }
+      case 'backend:select': {
+        const newBackend = message.payload.backend;
+        if (adapters[newBackend]) {
+          const config = vscode.workspace.getConfiguration('browserChat');
+          config.update('backend', newBackend, vscode.ConfigurationTarget.Global).then(() => {
+            getBackendState().then((state) => {
+              panelManager?.postMessage({ type: 'backend:state', payload: state });
+            });
+          });
+        }
+        break;
+      }
     }
   });
 
@@ -99,7 +137,21 @@ export function activate(context: vscode.ExtensionContext) {
           type: 'config:update',
           payload: { backend: adapter.name },
         });
+        // Also send backend:state for the toolbar selector
+        getBackendState().then((state) => {
+          panelManager?.postMessage({ type: 'backend:state', payload: state });
+        });
       }
+    })
+  );
+
+  // Listen for theme changes
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveColorTheme((theme) => {
+      const kind = theme.kind === vscode.ColorThemeKind.Light ||
+                   theme.kind === vscode.ColorThemeKind.HighContrastLight
+        ? 'light' : 'dark';
+      panelManager?.postMessage({ type: 'theme:update', payload: { kind } });
     })
   );
 
