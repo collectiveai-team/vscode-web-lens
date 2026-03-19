@@ -32,6 +32,12 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
       postMessage({ type: 'action:screenshot', payload: { dataUrl } });
     });
   },
+  onBackendRequest() {
+    postMessage({ type: 'backend:request', payload: {} });
+  },
+  onBackendSelect(backend: string) {
+    postMessage({ type: 'backend:select', payload: { backend } });
+  },
 });
 
 // ── Get iframe reference ────────────────────────────────────
@@ -100,6 +106,9 @@ iframe.addEventListener('error', () => {
   });
 });
 
+// Request initial backend state so the toolbar icon is correct from the start
+postMessage({ type: 'backend:request', payload: {} });
+
 // ── Listen for messages from extension host ─────────────────
 window.addEventListener('message', async (event: MessageEvent) => {
   const message = event.data;
@@ -135,6 +144,14 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
     case 'config:update':
       // Config updates handled in Chunk 4
+      break;
+
+    case 'backend:state':
+      toolbar.setBackendState(msg.payload.active, msg.payload.available);
+      break;
+
+    case 'theme:update':
+      document.body.dataset.theme = msg.payload.kind;
       break;
 
     case 'toast':
