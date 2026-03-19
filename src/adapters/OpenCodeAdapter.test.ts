@@ -47,7 +47,7 @@ const testBundle: ContextBundle = {
     ancestorPath: 'body > div > button',
     tag: 'button',
     classes: [],
-    dimensions: { width: 120, height: 34 },
+    dimensions: { top: 0, left: 0, width: 120, height: 34 },
     accessibility: { name: 'Click', role: 'button' },
   },
 };

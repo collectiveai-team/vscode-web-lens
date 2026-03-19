@@ -36,7 +36,7 @@ export interface InspectSelectedPayload {
   html: string;
   tag: string;
   classes: string[];
-  dimensions: { width: number; height: number };
+  dimensions: { top: number; left: number; width: number; height: number };
   accessibility: AccessibilityInfo;
 }
 
@@ -44,12 +44,15 @@ export interface CapturedElementPayload {
   html: string;
   tag: string;
   classes: string[];
-  dimensions: { width: number; height: number };
+  dimensions: { top: number; left: number; width: number; height: number };
   accessibility: AccessibilityInfo;
   parentHtml: string;
   ancestorPath: string;
   sourceLocation?: SourceLocation;
   screenshotDataUrl: string;
+  attributes?: Record<string, string>;
+  innerText?: string;
+  computedStyles?: Record<string, string>;
 }
 
 export interface AccessibilityInfo {
@@ -79,9 +82,12 @@ export interface ElementContext {
   tag: string;
   classes: string[];
   id?: string;
-  dimensions: { width: number; height: number };
+  dimensions: { top: number; left: number; width: number; height: number };
   accessibility: AccessibilityInfo;
   sourceLocation?: SourceLocation;
+  attributes?: Record<string, string>;
+  innerText?: string;
+  computedStyles?: Record<string, string>;
 }
 
 export interface ScreenshotData {

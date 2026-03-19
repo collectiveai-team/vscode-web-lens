@@ -32,7 +32,7 @@ describe('ClipboardAdapter', () => {
         ancestorPath: 'body > div > button.cta',
         tag: 'button',
         classes: ['cta'],
-        dimensions: { width: 120, height: 34 },
+        dimensions: { top: 0, left: 0, width: 120, height: 34 },
         accessibility: { name: 'Click', role: 'button' },
       },
     };
@@ -58,7 +58,7 @@ describe('ClipboardAdapter', () => {
         ancestorPath: 'body > div > button',
         tag: 'button',
         classes: [],
-        dimensions: { width: 120, height: 34 },
+        dimensions: { top: 0, left: 0, width: 120, height: 34 },
         accessibility: {},
         sourceLocation: { filePath: 'src/App.tsx', line: 42 },
       },
