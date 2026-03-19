@@ -39,7 +39,7 @@ export class OpenCodeAdapter implements BackendAdapter {
       const refs = buildAtReferences(result);
       await this.appendPrompt(port, refs);
       return { success: true, message: 'Added to OpenCode prompt' };
-    } catch (err) {
+    } catch (_err) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,

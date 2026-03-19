@@ -90,7 +90,7 @@ export class ClaudeCodeAdapter implements BackendAdapter {
       }
 
       return { success: true, message: 'Added to Claude Code chat' };
-    } catch (err) {
+    } catch (_err) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,

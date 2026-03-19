@@ -33,7 +33,7 @@ export class CodexAdapter implements BackendAdapter {
       const refs = buildAtReferences(saveResult);
       await sendViaSelectionCommand(refs, 'chatgpt.addToThread');
       return { success: true, message: 'Added to Codex thread' };
-    } catch (err) {
+    } catch (_err) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,

@@ -59,7 +59,7 @@ export class ContextExtractor {
     };
   }
 
-  private getImageDimensions(dataUrl: string): { width: number; height: number } {
+  private getImageDimensions(_dataUrl: string): { width: number; height: number } {
     // Approximate from base64 length — actual dimensions would require decoding
     // For now, return 0,0 — the backend adapter can decode if needed
     return { width: 0, height: 0 };

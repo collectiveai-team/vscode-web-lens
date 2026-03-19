@@ -92,7 +92,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "package": "npm run build:prod && vsce package",
     "publish": "npm run build:prod && vsce publish",
-    "test": "vitest run && vscode-test",
+    "test": "vitest run",
     "test:unit": "vitest run",
     "test:integration": "vscode-test",
     "lint": "eslint src/"

@@ -32,7 +32,7 @@ export class OpenChamberAdapter implements BackendAdapter {
       const refs = buildAtReferences(saveResult);
       await sendViaSelectionCommand(refs, 'openchamber.addToContext');
       return { success: true, message: 'Added to OpenChamber chat' };
-    } catch (err) {
+    } catch (_err) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,

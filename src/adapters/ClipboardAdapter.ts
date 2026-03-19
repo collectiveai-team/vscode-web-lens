@@ -19,7 +19,7 @@ export class ClipboardAdapter implements BackendAdapter {
 
       await vscode.env.clipboard.writeText(lines.join('\n'));
       return { success: true, message: 'File paths copied to clipboard' };
-    } catch (err) {
+    } catch (_err) {
       return { success: false, message: 'Failed to save context files' };
     }
   }
