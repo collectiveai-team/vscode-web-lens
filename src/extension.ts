@@ -5,6 +5,8 @@ import type { BackendAdapter } from './adapters/BackendAdapter';
 import { ClipboardAdapter } from './adapters/ClipboardAdapter';
 import { OpenCodeAdapter } from './adapters/OpenCodeAdapter';
 import { OpenChamberAdapter } from './adapters/OpenChamberAdapter';
+import { CodexAdapter } from './adapters/CodexAdapter';
+import { ClaudeCodeAdapter } from './adapters/ClaudeCodeAdapter';
 import type { WebviewMessage } from './types';
 
 let panelManager: BrowserPanelManager | undefined;
@@ -14,6 +16,8 @@ const adapters: Record<string, BackendAdapter> = {
   clipboard: new ClipboardAdapter(),
   opencode: new OpenCodeAdapter(),
   openchamber: new OpenChamberAdapter(),
+  codex: new CodexAdapter(),
+  claudecode: new ClaudeCodeAdapter(),
 };
 
 function getAdapter(): BackendAdapter {

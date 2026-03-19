@@ -26,7 +26,7 @@
         "browserChat.backend": {
           "type": "string",
           "default": "clipboard",
-          "enum": ["opencode", "openchamber", "clipboard"],
+          "enum": ["opencode", "openchamber", "codex", "claudecode", "clipboard"],
           "description": "Active backend for delivering context to AI agent"
         },
         "browserChat.defaultUrl": {
