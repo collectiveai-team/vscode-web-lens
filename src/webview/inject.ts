@@ -25,13 +25,16 @@ interface SourceLocation {
 
 interface ElementInfo {
   html: string;
-  tag: string;
-  classes: string[];
-  dimensions: { width: number; height: number };
-  accessibility: AccessibilityInfo;
   parentHtml: string;
   ancestorPath: string;
+  tag: string;
+  classes: string[];
+  dimensions: { top: number; left: number; width: number; height: number };
+  accessibility: AccessibilityInfo;
   sourceLocation?: SourceLocation;
+  attributes?: Record<string, string>;
+  innerText?: string;
+  computedStyles?: Record<string, string>;
 }
 
 // ── State ──────────────────────────────────────────────────
@@ -176,6 +179,9 @@ function handleInspectClick(el: HTMLElement) {
       parentHtml: info.parentHtml,
       ancestorPath: info.ancestorPath,
       sourceLocation: info.sourceLocation,
+      attributes: info.attributes,
+      innerText: info.innerText,
+      computedStyles: info.computedStyles,
     },
   });
 
@@ -198,6 +204,9 @@ function handleAddElementClick(el: HTMLElement) {
       parentHtml: truncate(info.parentHtml, 50000),
       ancestorPath: info.ancestorPath,
       sourceLocation: info.sourceLocation,
+      attributes: info.attributes,
+      innerText: info.innerText,
+      computedStyles: info.computedStyles,
     },
   });
 
@@ -263,6 +272,9 @@ function showTooltip(el: HTMLElement, info: ElementInfo) {
           parentHtml: truncate(info.parentHtml, 50000),
           ancestorPath: info.ancestorPath,
           sourceLocation: info.sourceLocation,
+          attributes: info.attributes,
+          innerText: info.innerText,
+          computedStyles: info.computedStyles,
         },
       });
     });
@@ -344,6 +356,24 @@ function extractElementInfo(el: HTMLElement): ElementInfo {
   // Source location (React dev mode)
   const sourceLocation = detectSourceLocation(el);
 
+  // Collect all attributes
+  const attributes: Record<string, string> = {};
+  for (let i = 0; i < el.attributes.length; i++) {
+    const attr = el.attributes[i];
+    attributes[attr.name] = attr.value;
+  }
+
+  // Collect all computed styles
+  const computedStyle = window.getComputedStyle(el);
+  const computedStyles: Record<string, string> = {};
+  for (let i = 0; i < computedStyle.length; i++) {
+    const prop = computedStyle[i];
+    computedStyles[prop] = computedStyle.getPropertyValue(prop);
+  }
+
+  // Inner text
+  const innerText = el.innerText;
+
   return {
     html,
     parentHtml,
@@ -351,11 +381,16 @@ function extractElementInfo(el: HTMLElement): ElementInfo {
     tag,
     classes,
     dimensions: {
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
       width: Math.round(rect.width),
       height: Math.round(rect.height),
     },
     accessibility,
     sourceLocation,
+    attributes,
+    innerText,
+    computedStyles,
   };
 }
 
