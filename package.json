@@ -2,23 +2,45 @@
   "name": "web-lens",
   "displayName": "Web Lens",
   "description": "Embedded browser for sending page context to AI coding agents",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "collectiveai-team",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "main": "./out/extension.js",
-  "activationEvents": ["onCommand:webLens.open"],
+  "activationEvents": [
+    "onCommand:webLens.open"
+  ],
   "contributes": {
     "commands": [
-      { "command": "webLens.open", "title": "Web Lens: Open" },
-      { "command": "webLens.openUrl", "title": "Web Lens: Open URL" },
-      { "command": "webLens.inspect", "title": "Web Lens: Inspect Element" },
-      { "command": "webLens.addElement", "title": "Web Lens: Add Element to Chat" },
-      { "command": "webLens.addLogs", "title": "Web Lens: Add Logs to Chat" },
-      { "command": "webLens.screenshot", "title": "Web Lens: Screenshot" }
+      {
+        "command": "webLens.open",
+        "title": "Web Lens: Open"
+      },
+      {
+        "command": "webLens.openUrl",
+        "title": "Web Lens: Open URL"
+      },
+      {
+        "command": "webLens.inspect",
+        "title": "Web Lens: Inspect Element"
+      },
+      {
+        "command": "webLens.addElement",
+        "title": "Web Lens: Add Element to Chat"
+      },
+      {
+        "command": "webLens.addLogs",
+        "title": "Web Lens: Add Logs to Chat"
+      },
+      {
+        "command": "webLens.screenshot",
+        "title": "Web Lens: Screenshot"
+      }
     ],
     "configuration": {
       "title": "Web Lens",
@@ -26,7 +48,13 @@
         "webLens.backend": {
           "type": "string",
           "default": "clipboard",
-          "enum": ["opencode", "openchamber", "codex", "claudecode", "clipboard"],
+          "enum": [
+            "opencode",
+            "openchamber",
+            "codex",
+            "claudecode",
+            "clipboard"
+          ],
           "description": "Active backend for delivering context to AI agent"
         },
         "webLens.defaultUrl": {
@@ -37,14 +65,17 @@
         "webLens.screenshotFormat": {
           "type": "string",
           "default": "png",
-          "enum": ["png", "jpeg"],
+          "enum": [
+            "png",
+            "jpeg"
+          ],
           "description": "Screenshot image format"
         },
         "webLens.screenshotQuality": {
           "type": "number",
           "default": 0.9,
           "minimum": 0.1,
-          "maximum": 1.0,
+          "maximum": 1,
           "description": "JPEG quality (0-1), ignored for PNG"
         },
         "webLens.contextDirectory": {
