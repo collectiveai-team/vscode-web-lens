@@ -155,6 +155,76 @@ html, body {
   font-size: 16px;
 }
 
+/* ── Backend selector menu ───────────────────────────────────── */
+
+.backend-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  min-width: 200px;
+  background: var(--vscode-menu-background, #252526);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  display: none;
+}
+
+.backend-menu.visible {
+  display: block;
+}
+
+.backend-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-menu-foreground, #cccccc);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.backend-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground, #094771);
+  color: var(--vscode-menu-selectionForeground, #ffffff);
+}
+
+.backend-menu-item.active {
+  color: var(--vscode-menu-foreground, #cccccc);
+}
+
+.backend-menu-item.disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── Backend button icon ─────────────────────────────────────── */
+
+.backend-btn-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+
+.backend-menu-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+}
+
+/* ── Theme-based icon visibility ─────────────────────────────── */
+
+[data-theme="dark"] .backend-icon-light { display: inline; }
+[data-theme="dark"] .backend-icon-dark { display: none; }
+[data-theme="light"] .backend-icon-light { display: none; }
+[data-theme="light"] .backend-icon-dark { display: inline; }
+
 /* ── Browser frame ───────────────────────────────────────────── */
 
 #browser-frame {
