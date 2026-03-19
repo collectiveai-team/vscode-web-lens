@@ -5,6 +5,10 @@
   "version": "0.2.0",
   "publisher": "collectiveai-team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/collectiveai-team/vscode-web-lens"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
