@@ -277,12 +277,14 @@ function extractElementInfo(el: HTMLElement): ElementInfo {
   const rect = el.getBoundingClientRect();
   const html = el.outerHTML;
 
-  // Parent HTML with siblings collapsed into a single comment
+  // Parent HTML with siblings collapsed
   let parentHtml = '';
   if (el.parentElement) {
     const parent = el.parentElement.cloneNode(true) as HTMLElement;
     const children = Array.from(parent.children);
     const siblingCount = children.length - 1;
+
+    // Find and keep only the target element
     let foundTarget = false;
     const toRemove: Element[] = [];
     children.forEach((child) => {
@@ -293,6 +295,19 @@ function extractElementInfo(el: HTMLElement): ElementInfo {
       }
     });
     toRemove.forEach((child) => child.remove());
+
+    // Clean up orphan text nodes and comments left behind
+    const nodesToRemove: Node[] = [];
+    parent.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE && (!node.textContent || !node.textContent.trim())) {
+        nodesToRemove.push(node);
+      } else if (node.nodeType === Node.COMMENT_NODE) {
+        nodesToRemove.push(node);
+      }
+    });
+    nodesToRemove.forEach((node) => parent.removeChild(node));
+
+    // Add our summary comment at the top
     if (siblingCount > 0) {
       parent.insertBefore(
         parent.ownerDocument.createComment(` ${siblingCount} sibling(s) omitted `),

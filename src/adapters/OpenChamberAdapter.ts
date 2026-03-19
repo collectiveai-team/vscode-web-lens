@@ -32,7 +32,15 @@ export class OpenChamberAdapter implements BackendAdapter {
     }
 
     try {
-      const text = this.formatContext(bundle);
+      // Save screenshot to temp file if present
+      let screenshotPath = '';
+      if (bundle.screenshot?.dataUrl) {
+        screenshotPath = path.join(os.tmpdir(), `browser-screenshot-${Date.now()}.png`);
+        const base64Data = bundle.screenshot.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(screenshotPath, Buffer.from(base64Data, 'base64'));
+      }
+
+      const text = this.formatContext(bundle, screenshotPath);
       await this.sendViaAddToContext(text);
       return { success: true, message: 'Added to OpenChamber chat' };
     } catch (err) {
@@ -60,7 +68,7 @@ export class OpenChamberAdapter implements BackendAdapter {
   private async sendViaAddToContext(text: string): Promise<void> {
     // Write to temp file
     const tmpDir = os.tmpdir();
-    const tmpFile = path.join(tmpDir, `browser-chat-context-${Date.now()}.md`);
+    const tmpFile = path.join(tmpDir, `browser-context.html`);
     fs.writeFileSync(tmpFile, text, 'utf8');
 
     try {
@@ -105,7 +113,7 @@ export class OpenChamberAdapter implements BackendAdapter {
     }
   }
 
-  private formatContext(bundle: ContextBundle): string {
+  private formatContext(bundle: ContextBundle, screenshotPath?: string): string {
     const parts: string[] = [];
 
     parts.push(`[Browser Chat] Context from ${bundle.url}`);
@@ -139,6 +147,11 @@ export class OpenChamberAdapter implements BackendAdapter {
         parts.push(`[${entry.level.toUpperCase()}] ${entry.message}`);
       }
       parts.push('```');
+    }
+
+    if (screenshotPath) {
+      parts.push('');
+      parts.push(`Screenshot: ${screenshotPath}`);
     }
 
     return parts.join('\n');
