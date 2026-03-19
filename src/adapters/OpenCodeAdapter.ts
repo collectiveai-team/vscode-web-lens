@@ -5,93 +5,96 @@ import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
 
 /**
- * Delivers browser context to OpenCode.
+ * Delivers browser context to OpenCode via its HTTP API.
  *
- * Supports two VS Code extensions:
- * 1. Official OpenCode extension (anomalyco.opencode) — discovers port
- *    from terminal env `_EXTENSION_OPENCODE_PORT`
- * 2. OpenCode Sidebar TUI (islee23520.opencode-sidebar-tui) — uses the
- *    `opencodeTui.sendToTerminal` command to send text, or HTTP API
- *    if `opencodeTui.enableHttpApi` is enabled
+ * Port discovery (in priority order):
+ * 1. opencode-sidebar-tui extension (islee23520): reads port from the
+ *    embedded terminal's _EXTENSION_OPENCODE_PORT env var
+ * 2. Official opencode extension (anomalyco): same env var on VS Code terminals
  *
- * Both use the OpenCode server's /tui/append-prompt HTTP endpoint.
+ * Context delivery: POST /tui/append-prompt with { "prompt": text }
+ *
+ * Note: opencodeTui.sendToTerminal command does NOT accept arguments —
+ * it reads from the active editor selection. We must use the HTTP API.
  */
 export class OpenCodeAdapter implements BackendAdapter {
   readonly name = 'opencode';
   private fallback = new ClipboardAdapter();
 
   async deliver(bundle: ContextBundle): Promise<DeliveryResult> {
-    const text = this.formatContext(bundle);
-
-    // Strategy 1: Try sending via opencodeTui.sendToTerminal command
-    const hasSidebarTui = await this.hasSidebarTuiExtension();
-    if (hasSidebarTui) {
-      try {
-        await vscode.commands.executeCommand('opencodeTui.sendToTerminal', text);
-        return { success: true, message: 'Sent to OpenCode' };
-      } catch {
-        // Fall through to HTTP API
-      }
+    const port = await this.discoverPort();
+    if (!port) {
+      const result = await this.fallback.deliver(bundle);
+      return {
+        success: result.success,
+        message: `OpenCode not found — ${result.message.toLowerCase()}`,
+      };
     }
 
-    // Strategy 2: Try HTTP API via terminal port discovery
-    const port = this.findOpenCodePort();
-    if (port) {
-      try {
-        await this.appendPrompt(port, text);
-        return { success: true, message: 'Added to OpenCode prompt' };
-      } catch {
-        // Fall through to clipboard
-      }
+    try {
+      const text = this.formatContext(bundle);
+      await this.appendPrompt(port, text);
+      return { success: true, message: 'Added to OpenCode prompt' };
+    } catch (err) {
+      const result = await this.fallback.deliver(bundle);
+      return {
+        success: result.success,
+        message: `OpenCode error, fell back to clipboard`,
+      };
     }
-
-    // Strategy 3: Clipboard fallback
-    const result = await this.fallback.deliver(bundle);
-    return {
-      success: result.success,
-      message: `OpenCode not found — ${result.message.toLowerCase()}`,
-    };
   }
 
   async isAvailable(): Promise<boolean> {
-    // Check for sidebar TUI extension
-    if (await this.hasSidebarTuiExtension()) return true;
-    // Check for official extension terminal
-    if (this.findOpenCodePort() !== null) return true;
-    return false;
+    const port = await this.discoverPort();
+    return port !== null;
   }
 
-  private async hasSidebarTuiExtension(): Promise<boolean> {
-    try {
-      const commands = await vscode.commands.getCommands(true);
-      return commands.includes('opencodeTui.sendToTerminal');
-    } catch {
-      return false;
-    }
-  }
-
-  private findOpenCodePort(): number | null {
+  /**
+   * Discover the OpenCode HTTP API port.
+   * Scans VS Code terminals for _EXTENSION_OPENCODE_PORT env var,
+   * then verifies the server is reachable via /health.
+   */
+  private async discoverPort(): Promise<number | null> {
+    // Check terminals for port env var (works for both official and sidebar-tui extensions)
     for (const terminal of vscode.window.terminals) {
       const creationOptions = terminal.creationOptions as vscode.TerminalOptions;
       const env = creationOptions?.env;
-      if (env?.['_EXTENSION_OPENCODE_PORT']) {
-        return parseInt(env['_EXTENSION_OPENCODE_PORT'], 10);
+      const portStr = env?.['_EXTENSION_OPENCODE_PORT'];
+      if (portStr) {
+        const port = parseInt(portStr, 10);
+        if (port > 0 && await this.isReachable(port)) {
+          return port;
+        }
       }
     }
     return null;
   }
 
+  private isReachable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const req = http.request(
+        { hostname: '127.0.0.1', port, path: '/health', method: 'GET', timeout: 1500 },
+        (res) => { resolve(res.statusCode === 200); res.resume(); }
+      );
+      req.on('error', () => resolve(false));
+      req.on('timeout', () => { req.destroy(); resolve(false); });
+      req.end();
+    });
+  }
+
   private appendPrompt(port: number, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const body = JSON.stringify({ text });
+      // OpenCode expects { "prompt": text }, NOT { "text": text }
+      const body = JSON.stringify({ prompt: text });
       const req = http.request(
         {
-          hostname: 'localhost',
+          hostname: '127.0.0.1',
           port,
           path: '/tui/append-prompt',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             'Content-Length': Buffer.byteLength(body),
           },
           timeout: 3000,
