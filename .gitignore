@@ -4,3 +4,4 @@ webview/main.js
 webview/main.js.map
 *.vsix
 .superpowers/
+docs/superpowers
