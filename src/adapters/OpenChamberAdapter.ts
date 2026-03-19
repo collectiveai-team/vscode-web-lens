@@ -63,7 +63,7 @@ export class OpenChamberAdapter implements BackendAdapter {
   private async sendViaAddToContext(text: string): Promise<void> {
     // Write to temp file
     const tmpDir = os.tmpdir();
-    const tmpFile = path.join(tmpDir, `browser-context.html`);
+    const tmpFile = path.join(tmpDir, `.ref`);
     fs.writeFileSync(tmpFile, text, 'utf8');
 
     try {
