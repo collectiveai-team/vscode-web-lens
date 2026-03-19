@@ -45,6 +45,7 @@ export class BrowserPanelManager {
         localResourceRoots: [
           vscode.Uri.joinPath(this.extensionUri, 'webview'),
           vscode.Uri.joinPath(this.extensionUri, 'out'),
+          vscode.Uri.joinPath(this.extensionUri, 'media', 'icons'),
         ],
       }
     );
@@ -167,6 +168,19 @@ export class BrowserPanelManager {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'webview', 'main.css')
     );
+    // Backend icon URIs
+    const iconBase = vscode.Uri.joinPath(this.extensionUri, 'media', 'icons');
+    const opencodeLight = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'opencode-light.svg'));
+    const opencodeDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'opencode-dark.svg'));
+    const openchamberLight = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'openchamber-light.svg'));
+    const openchamberDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'openchamber-dark.svg'));
+
+    // Theme kind for icon visibility
+    const themeKind = vscode.window.activeColorTheme.kind;
+    const dataTheme = (themeKind === vscode.ColorThemeKind.Light ||
+                       themeKind === vscode.ColorThemeKind.HighContrastLight)
+      ? 'light' : 'dark';
+
     const nonce = this.getNonce();
 
     return `<!DOCTYPE html>
@@ -187,7 +201,13 @@ export class BrowserPanelManager {
   <link href="${styleUri}" rel="stylesheet">
   <title>Browser Chat</title>
 </head>
-<body>
+<body data-theme="${dataTheme}">
+  <div id="backend-icons" hidden
+    data-opencode-light="${opencodeLight}"
+    data-opencode-dark="${opencodeDark}"
+    data-openchamber-light="${openchamberLight}"
+    data-openchamber-dark="${openchamberDark}"
+  ></div>
   <div id="toolbar"></div>
   <div id="browser-frame">
     <iframe id="browser-iframe" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>

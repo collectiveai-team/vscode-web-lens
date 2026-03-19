@@ -25,6 +25,13 @@ vi.mock('vscode', () => ({
       reveal: vi.fn(),
       dispose: vi.fn(),
     }),
+    activeColorTheme: { kind: 2 },
+  },
+  ColorThemeKind: {
+    Light: 1,
+    Dark: 2,
+    HighContrast: 3,
+    HighContrastLight: 4,
   },
   ViewColumn: { One: 1 },
   Uri: {
