@@ -53,6 +53,30 @@ describe('ContextExtractor', () => {
     expect(bundle.element).toBeUndefined();
   });
 
+  it('maps attributes, innerText, computedStyles from payload', () => {
+    const bundle = extractor.fromCapturedElement(
+      {
+        html: '<div class="banner" role="alert">Hello</div>',
+        tag: 'div',
+        classes: ['banner'],
+        dimensions: { top: 86, left: 252, width: 789, height: 71 },
+        accessibility: { role: 'alert' },
+        parentHtml: '<main><div class="banner" role="alert">Hello</div></main>',
+        ancestorPath: 'body > main > div.banner',
+        screenshotDataUrl: '',
+        attributes: { class: 'banner', role: 'alert' },
+        innerText: 'Hello',
+        computedStyles: { display: 'flex', color: 'rgb(0, 0, 0)' },
+      },
+      'http://localhost:3000'
+    );
+
+    expect(bundle.element?.attributes).toEqual({ class: 'banner', role: 'alert' });
+    expect(bundle.element?.innerText).toBe('Hello');
+    expect(bundle.element?.computedStyles).toEqual({ display: 'flex', color: 'rgb(0, 0, 0)' });
+    expect(bundle.element?.dimensions).toEqual({ top: 86, left: 252, width: 789, height: 71 });
+  });
+
   it('builds logs-only bundle', () => {
     const bundle = extractor.fromLogs(
       [{ level: 'error', message: 'Uncaught TypeError', timestamp: 1000 }],

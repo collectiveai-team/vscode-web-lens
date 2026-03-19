@@ -21,6 +21,9 @@ export class ContextExtractor {
         dimensions: payload.dimensions,
         accessibility: payload.accessibility,
         sourceLocation: payload.sourceLocation,
+        attributes: payload.attributes,
+        innerText: payload.innerText,
+        computedStyles: payload.computedStyles,
       },
     };
 
