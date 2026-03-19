@@ -10,6 +10,10 @@ vi.mock('vscode', () => ({
       positionAt: vi.fn().mockReturnValue({ line: 0, character: 0 }),
       getText: vi.fn().mockReturnValue('test content'),
     }),
+    getConfiguration: vi.fn().mockReturnValue({
+      get: vi.fn().mockReturnValue('.tmp'),
+    }),
+    workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
   },
   window: {
     activeTextEditor: null,
@@ -34,6 +38,11 @@ vi.mock('os', () => ({
 vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
+  existsSync: vi.fn().mockReturnValue(true),
+  mkdirSync: vi.fn(),
+  readFileSync: vi.fn().mockReturnValue(''),
+  appendFileSync: vi.fn(),
+  readdirSync: vi.fn().mockReturnValue([]),
 }));
 
 import { OpenChamberAdapter } from './OpenChamberAdapter';
@@ -79,7 +88,7 @@ describe('OpenChamberAdapter', () => {
     expect(available).toBe(false);
   });
 
-  it('calls openchamber.addToContext command', async () => {
+  it('calls openchamber.addToContext with @ file references', async () => {
     const result = await adapter.deliver(testBundle);
     expect(result.success).toBe(true);
     expect(result.message).toBe('Added to OpenChamber chat');

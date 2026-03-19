@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import type { ContextBundle, DeliveryResult } from '../types';
 import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
+import { saveContextFiles, cleanupOldFiles, buildAtReferences } from './contextFiles';
 
 /**
  * Delivers browser context to OpenChamber (fedaykindev.openchamber).
@@ -32,16 +33,10 @@ export class OpenChamberAdapter implements BackendAdapter {
     }
 
     try {
-      // Save screenshot to temp file if present
-      let screenshotPath = '';
-      if (bundle.screenshot?.dataUrl) {
-        screenshotPath = path.join(os.tmpdir(), `browser-screenshot-${Date.now()}.png`);
-        const base64Data = bundle.screenshot.dataUrl.replace(/^data:image\/\w+;base64,/, '');
-        fs.writeFileSync(screenshotPath, Buffer.from(base64Data, 'base64'));
-      }
-
-      const text = this.formatContext(bundle, screenshotPath);
-      await this.sendViaAddToContext(text);
+      const saveResult = await saveContextFiles(bundle);
+      cleanupOldFiles(saveResult.dir); // fire-and-forget
+      const refs = buildAtReferences(saveResult);
+      await this.sendViaAddToContext(refs);
       return { success: true, message: 'Added to OpenChamber chat' };
     } catch (err) {
       const result = await this.fallback.deliver(bundle);
@@ -113,47 +108,4 @@ export class OpenChamberAdapter implements BackendAdapter {
     }
   }
 
-  private formatContext(bundle: ContextBundle, screenshotPath?: string): string {
-    const parts: string[] = [];
-
-    parts.push(`[Browser Chat] Context from ${bundle.url}`);
-    parts.push('');
-
-    if (bundle.element) {
-      if (bundle.element.sourceLocation) {
-        parts.push(`Source: @${bundle.element.sourceLocation.filePath}#L${bundle.element.sourceLocation.line}`);
-      }
-      parts.push(`Selector: ${bundle.element.ancestorPath}`);
-      parts.push('');
-      parts.push('Element HTML:');
-      parts.push('```html');
-      parts.push(bundle.element.html);
-      parts.push('```');
-
-      if (bundle.element.parentHtml) {
-        parts.push('');
-        parts.push('Parent HTML:');
-        parts.push('```html');
-        parts.push(bundle.element.parentHtml);
-        parts.push('```');
-      }
-    }
-
-    if (bundle.logs && bundle.logs.length > 0) {
-      parts.push('');
-      parts.push('Console logs:');
-      parts.push('```');
-      for (const entry of bundle.logs) {
-        parts.push(`[${entry.level.toUpperCase()}] ${entry.message}`);
-      }
-      parts.push('```');
-    }
-
-    if (screenshotPath) {
-      parts.push('');
-      parts.push(`Screenshot: ${screenshotPath}`);
-    }
-
-    return parts.join('\n');
-  }
 }
