@@ -46,6 +46,11 @@
           "minimum": 0.1,
           "maximum": 1.0,
           "description": "JPEG quality (0-1), ignored for PNG"
+        },
+        "browserChat.contextDirectory": {
+          "type": "string",
+          "default": ".tmp",
+          "description": "Directory for context files (screenshots and element data). Relative paths resolve from workspace root. Absolute paths used as-is."
         }
       }
     }
