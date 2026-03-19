@@ -9,10 +9,26 @@ vi.mock('vscode', () => ({
       writeText: vi.fn().mockResolvedValue(undefined),
     },
   },
+  workspace: {
+    getConfiguration: vi.fn().mockReturnValue({
+      get: vi.fn().mockReturnValue('.tmp'),
+    }),
+    workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
+  },
 }));
 
 vi.mock('http', () => ({
   request: vi.fn(),
+}));
+
+vi.mock('fs', () => ({
+  existsSync: vi.fn().mockReturnValue(true),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  readFileSync: vi.fn().mockReturnValue(''),
+  appendFileSync: vi.fn(),
+  readdirSync: vi.fn().mockReturnValue([]),
+  unlinkSync: vi.fn(),
 }));
 
 import { OpenCodeAdapter } from './OpenCodeAdapter';
@@ -98,10 +114,11 @@ describe('OpenCodeAdapter', () => {
     expect(result.success).toBe(true);
     expect(result.message).toBe('Added to OpenCode prompt');
 
-    // Verify the request body uses "text" (what OpenCode server expects)
+    // Verify the request body uses @ file references instead of inline text
     const writeCall = mockReq.write.mock.calls[0][0];
     const body = JSON.parse(writeCall);
     expect(body).toHaveProperty('text');
-    expect(body).not.toHaveProperty('prompt');
+    expect(body.text).toMatch(/@.*browser-context-\d+\.txt/);
+    expect(body.text).not.toContain('[Browser Chat] Context from');
   });
 });
