@@ -174,6 +174,10 @@ export class BrowserPanelManager {
     const opencodeDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'opencode-dark.svg'));
     const openchamberLight = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'openchamber-light.svg'));
     const openchamberDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'openchamber-dark.svg'));
+    const codexLight = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'codex-light.svg'));
+    const codexDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'codex-dark.svg'));
+    const claudecodeLight = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'claudecode-light.svg'));
+    const claudecodeDark = webview.asWebviewUri(vscode.Uri.joinPath(iconBase, 'claudecode-dark.svg'));
 
     // Theme kind for icon visibility
     const themeKind = vscode.window.activeColorTheme.kind;
@@ -207,6 +211,10 @@ export class BrowserPanelManager {
     data-opencode-dark="${opencodeDark}"
     data-openchamber-light="${openchamberLight}"
     data-openchamber-dark="${openchamberDark}"
+    data-codex-light="${codexLight}"
+    data-codex-dark="${codexDark}"
+    data-claudecode-light="${claudecodeLight}"
+    data-claudecode-dark="${claudecodeDark}"
   ></div>
   <div id="toolbar"></div>
   <div id="browser-frame">

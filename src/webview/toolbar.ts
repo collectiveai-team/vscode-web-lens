@@ -75,7 +75,6 @@ export function createToolbar(
           <img class="backend-btn-icon backend-icon-light" id="backend-icon-light" width="18" height="18" />
           <img class="backend-btn-icon backend-icon-dark" id="backend-icon-dark" width="18" height="18" />
           <span class="material-symbols-outlined backend-btn-icon-clipboard" id="backend-icon-clipboard">content_copy</span>
-          <span class="material-symbols-outlined backend-btn-icon-material" id="backend-icon-material" style="display:none;"></span>
         </button>
         <div class="backend-menu" id="backend-menu"></div>
       </div>
@@ -125,7 +124,6 @@ export function createToolbar(
   const backendIconLight = container.querySelector('#backend-icon-light') as HTMLImageElement;
   const backendIconDark = container.querySelector('#backend-icon-dark') as HTMLImageElement;
   const backendIconClipboard = container.querySelector('#backend-icon-clipboard') as HTMLElement;
-  const backendIconMaterial = container.querySelector('#backend-icon-material') as HTMLElement;
 
   // Read icon URIs from the hidden data element
   const iconData = document.getElementById('backend-icons');
@@ -138,12 +136,14 @@ export function createToolbar(
       light: iconData?.dataset.openchamberLight || '',
       dark: iconData?.dataset.openchamberDark || '',
     },
-  };
-
-  // Material Symbols icon names for backends without custom SVGs
-  const materialIcons: Record<string, string> = {
-    codex: 'hexagon',
-    claudecode: 'auto_awesome',
+    codex: {
+      light: iconData?.dataset.codexLight || '',
+      dark: iconData?.dataset.codexDark || '',
+    },
+    claudecode: {
+      light: iconData?.dataset.claudecodeLight || '',
+      dark: iconData?.dataset.claudecodeDark || '',
+    },
   };
 
   const elements: ToolbarElements = { urlBar, btnInspect, btnAddElement, banner };
@@ -275,18 +275,13 @@ export function createToolbar(
   function updateBackendIcon() {
     const active = backendState.active;
     const uris = iconUris[active];
-    const materialIcon = materialIcons[active];
 
     backendIconLight.style.display = 'none';
     backendIconDark.style.display = 'none';
     backendIconClipboard.style.display = 'none';
-    backendIconMaterial.style.display = 'none';
 
     if (active === 'clipboard') {
       backendIconClipboard.style.display = 'inline';
-    } else if (materialIcon) {
-      backendIconMaterial.textContent = materialIcon;
-      backendIconMaterial.style.display = 'inline';
     } else if (uris) {
       backendIconLight.src = uris.light;
       backendIconDark.src = uris.dark;
@@ -310,15 +305,9 @@ export function createToolbar(
       const isAvailable = backendState.available[b.key] !== false;
       const disabledClass = isAvailable ? '' : ' disabled';
       const activeClass = isActive ? ' active' : '';
-      const matIcon = materialIcons[b.key];
-      let icon: string;
-      if (b.key === 'clipboard') {
-        icon = `<span class="material-symbols-outlined" style="font-size:16px;">content_copy</span>`;
-      } else if (matIcon) {
-        icon = `<span class="material-symbols-outlined" style="font-size:16px;">${matIcon}</span>`;
-      } else {
-        icon = `<img class="backend-menu-icon backend-icon-light" src="${iconUris[b.key]?.light || ''}" width="16" height="16" /><img class="backend-menu-icon backend-icon-dark" src="${iconUris[b.key]?.dark || ''}" width="16" height="16" />`;
-      }
+      const icon = b.key === 'clipboard'
+        ? `<span class="material-symbols-outlined" style="font-size:16px;">content_copy</span>`
+        : `<img class="backend-menu-icon backend-icon-light" src="${iconUris[b.key]?.light || ''}" width="16" height="16" /><img class="backend-menu-icon backend-icon-dark" src="${iconUris[b.key]?.dark || ''}" width="16" height="16" />`;
       const check = isActive ? '<span class="material-symbols-outlined" style="font-size:16px;margin-left:auto;">check</span>' : '';
 
       return `<button class="backend-menu-item${activeClass}${disabledClass}" data-backend="${b.key}">

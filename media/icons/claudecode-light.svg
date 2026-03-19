@@ -1,0 +1,12 @@
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Claude sparkle/starburst icon -->
+  <path d="M50 8 L53.5 40 L50 35 L46.5 40 Z" fill="#424242"/>
+  <path d="M50 92 L53.5 60 L50 65 L46.5 60 Z" fill="#424242"/>
+  <path d="M8 50 L40 46.5 L35 50 L40 53.5 Z" fill="#424242"/>
+  <path d="M92 50 L60 46.5 L65 50 L60 53.5 Z" fill="#424242"/>
+  <path d="M20.3 20.3 L42.5 39.5 L38 38 L39.5 42.5 Z" fill="#424242"/>
+  <path d="M79.7 79.7 L57.5 60.5 L62 62 L60.5 57.5 Z" fill="#424242"/>
+  <path d="M79.7 20.3 L60.5 42.5 L62 38 L57.5 39.5 Z" fill="#424242"/>
+  <path d="M20.3 79.7 L39.5 57.5 L38 62 L42.5 60.5 Z" fill="#424242"/>
+  <circle cx="50" cy="50" r="5" fill="#424242"/>
+</svg>
