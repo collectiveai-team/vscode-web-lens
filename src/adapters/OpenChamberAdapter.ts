@@ -1,39 +1,40 @@
 import * as vscode from 'vscode';
-import * as http from 'http';
-import * as childProcess from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 import type { ContextBundle, DeliveryResult } from '../types';
 import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
-import { getOpenCodeAuthHeaders } from './auth';
 
 /**
  * Delivers browser context to OpenChamber (fedaykindev.openchamber).
  *
- * OpenChamber spawns `opencode serve --port <random>` on a RANDOM port.
- * Port discovery (in priority order):
- * 1. openchamber.apiUrl setting — if user configured an external server
- * 2. Process scan — find `opencode serve --port <N>` processes
+ * Strategy: Write context to a temp file, open it in an editor with all
+ * text selected, then call `openchamber.addToContext` which reads the
+ * active editor selection and passes it to the ChatViewProvider's
+ * `addTextToInput()` method.
  *
- * Context delivery: POST /tui/append-prompt with { "prompt": text }
+ * This is the only reliable way to inject arbitrary text into OpenChamber
+ * since it doesn't expose a command that accepts text arguments.
  */
 export class OpenChamberAdapter implements BackendAdapter {
   readonly name = 'openchamber';
   private fallback = new ClipboardAdapter();
 
   async deliver(bundle: ContextBundle): Promise<DeliveryResult> {
-    const server = await this.discoverServer();
-    if (!server) {
+    const hasExtension = await this.isAvailable();
+    if (!hasExtension) {
       const result = await this.fallback.deliver(bundle);
       return {
         success: result.success,
-        message: `OpenChamber not available — ${result.message.toLowerCase()}`,
+        message: `OpenChamber not installed — ${result.message.toLowerCase()}`,
       };
     }
 
     try {
       const text = this.formatContext(bundle);
-      await this.appendPrompt(server.hostname, server.port, text);
-      return { success: true, message: 'Added to OpenChamber prompt' };
+      await this.sendViaAddToContext(text);
+      return { success: true, message: 'Added to OpenChamber chat' };
     } catch (err) {
       const result = await this.fallback.deliver(bundle);
       return {
@@ -46,105 +47,62 @@ export class OpenChamberAdapter implements BackendAdapter {
   async isAvailable(): Promise<boolean> {
     try {
       const commands = await vscode.commands.getCommands(true);
-      if (!commands.some((cmd) => cmd.startsWith('openchamber.'))) return false;
-      const server = await this.discoverServer();
-      return server !== null;
+      return commands.includes('openchamber.addToContext');
     } catch {
       return false;
     }
   }
 
-  private async discoverServer(): Promise<{ hostname: string; port: number } | null> {
-    // Strategy 1: Read openchamber.apiUrl setting
-    const config = vscode.workspace.getConfiguration('openchamber');
-    const apiUrl = config.get<string>('apiUrl') || '';
-    if (apiUrl) {
-      try {
-        const url = new URL(apiUrl);
-        const hostname = url.hostname || '127.0.0.1';
-        const port = parseInt(url.port, 10) || 4096;
-        if (await this.isReachable(hostname, port)) {
-          return { hostname, port };
-        }
-      } catch {
-        // Invalid URL
-      }
-    }
+  /**
+   * Write context to a temp file, open it, select all, call addToContext,
+   * then close the temp editor and clean up the file.
+   */
+  private async sendViaAddToContext(text: string): Promise<void> {
+    // Write to temp file
+    const tmpDir = os.tmpdir();
+    const tmpFile = path.join(tmpDir, `browser-chat-context-${Date.now()}.md`);
+    fs.writeFileSync(tmpFile, text, 'utf8');
 
-    // Strategy 2: Scan for opencode serve processes spawned by OpenChamber
-    const port = await this.scanForOpenCodeServePort();
-    if (port && await this.isReachable('127.0.0.1', port)) {
-      return { hostname: '127.0.0.1', port };
-    }
+    try {
+      // Save current active editor to restore later
+      const previousEditor = vscode.window.activeTextEditor;
 
-    return null;
-  }
+      // Open the temp file
+      const doc = await vscode.workspace.openTextDocument(tmpFile);
+      const editor = await vscode.window.showTextDocument(doc, {
+        viewColumn: vscode.ViewColumn.Active,
+        preserveFocus: false,
+        preview: true,
+      });
 
-  private scanForOpenCodeServePort(): Promise<number | null> {
-    return new Promise((resolve) => {
-      try {
-        const cmd = process.platform === 'win32'
-          ? 'wmic process where "name like \'%opencode%\'" get commandline /format:list'
-          : 'ps aux | grep "opencode serve" | grep -v grep';
+      // Select all text
+      const fullRange = new vscode.Range(
+        doc.positionAt(0),
+        doc.positionAt(doc.getText().length)
+      );
+      editor.selection = new vscode.Selection(fullRange.start, fullRange.end);
 
-        childProcess.exec(cmd, { timeout: 2000 }, (err, stdout) => {
-          if (err || !stdout) {
-            resolve(null);
-            return;
-          }
-          // Match --port <number> or --port=<number>
-          const match = stdout.match(/--port(?:=|\s+)(\d{2,5})/);
-          resolve(match ? parseInt(match[1], 10) : null);
+      // Call openchamber.addToContext — it reads the active editor selection
+      await vscode.commands.executeCommand('openchamber.addToContext');
+
+      // Close the temp editor
+      await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+
+      // Restore previous editor if there was one
+      if (previousEditor?.document) {
+        await vscode.window.showTextDocument(previousEditor.document, {
+          viewColumn: previousEditor.viewColumn,
+          preserveFocus: false,
         });
-      } catch {
-        resolve(null);
       }
-    });
-  }
-
-  private isReachable(hostname: string, port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const req = http.request(
-        { hostname, port, path: '/global/health', method: 'GET', timeout: 1500, headers: getOpenCodeAuthHeaders() },
-        (res) => { resolve(res.statusCode === 200); res.resume(); }
-      );
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => { req.destroy(); resolve(false); });
-      req.end();
-    });
-  }
-
-  private appendPrompt(hostname: string, port: number, text: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // OpenCode server expects { "text": text }
-      const body = JSON.stringify({ text });
-      const req = http.request(
-        {
-          hostname, port,
-          path: '/tui/append-prompt',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Content-Length': Buffer.byteLength(body),
-            ...getOpenCodeAuthHeaders(),
-          },
-          timeout: 3000,
-        },
-        (res) => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Server returned ${res.statusCode}`));
-          }
-          res.resume();
-        }
-      );
-      req.on('error', reject);
-      req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-      req.write(body);
-      req.end();
-    });
+    } finally {
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   }
 
   private formatContext(bundle: ContextBundle): string {

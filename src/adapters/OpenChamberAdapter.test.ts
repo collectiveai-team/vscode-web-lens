@@ -3,10 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('vscode', () => ({
   commands: {
     getCommands: vi.fn().mockResolvedValue(['openchamber.addToContext', 'openchamber.focusChat']),
+    executeCommand: vi.fn().mockResolvedValue(undefined),
   },
   workspace: {
-    getConfiguration: vi.fn().mockReturnValue({
-      get: vi.fn().mockReturnValue(undefined),
+    openTextDocument: vi.fn().mockResolvedValue({
+      positionAt: vi.fn().mockReturnValue({ line: 0, character: 0 }),
+      getText: vi.fn().mockReturnValue('test content'),
+    }),
+  },
+  window: {
+    activeTextEditor: null,
+    showTextDocument: vi.fn().mockResolvedValue({
+      selection: null,
     }),
   },
   env: {
@@ -14,48 +22,25 @@ vi.mock('vscode', () => ({
       writeText: vi.fn().mockResolvedValue(undefined),
     },
   },
+  ViewColumn: { Active: 1 },
+  Range: vi.fn().mockImplementation((start: any, end: any) => ({ start, end })),
+  Selection: vi.fn().mockImplementation((start: any, end: any) => ({ start, end, isEmpty: false })),
 }));
 
-vi.mock('http', () => ({
-  request: vi.fn(),
+vi.mock('os', () => ({
+  tmpdir: vi.fn().mockReturnValue('/tmp'),
+}));
+
+vi.mock('fs', () => ({
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 import { OpenChamberAdapter } from './OpenChamberAdapter';
 import * as vscode from 'vscode';
-import * as http from 'http';
 import type { ContextBundle } from '../types';
 
 const mockedVscode = vi.mocked(vscode, true);
-const mockedHttp = vi.mocked(http);
-
-function mockHttpSuccess(statusCode = 200) {
-  const mockRes = { statusCode, resume: vi.fn() };
-  const mockReq = {
-    on: vi.fn().mockReturnThis(),
-    write: vi.fn(),
-    end: vi.fn(),
-    destroy: vi.fn(),
-  };
-  mockedHttp.request.mockImplementation((_opts: any, callback: any) => {
-    callback(mockRes);
-    return mockReq as any;
-  });
-  return { mockReq, mockRes };
-}
-
-function mockHttpError() {
-  const mockReq = {
-    on: vi.fn((event: string, handler: any) => {
-      if (event === 'error') handler(new Error('ECONNREFUSED'));
-      return mockReq;
-    }),
-    write: vi.fn(),
-    end: vi.fn(),
-    destroy: vi.fn(),
-  };
-  mockedHttp.request.mockImplementation(() => mockReq as any);
-  return mockReq;
-}
 
 const testBundle: ContextBundle = {
   url: 'http://localhost:3000',
@@ -76,12 +61,14 @@ describe('OpenChamberAdapter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedVscode.commands.getCommands.mockResolvedValue(['openchamber.addToContext', 'openchamber.focusChat']);
+    mockedVscode.commands.getCommands.mockResolvedValue([
+      'openchamber.addToContext',
+      'openchamber.focusChat',
+    ]);
     adapter = new OpenChamberAdapter();
   });
 
-  it('checks availability via extension commands + health endpoint', async () => {
-    mockHttpSuccess(200);
+  it('checks availability by looking for addToContext command', async () => {
     const available = await adapter.isAvailable();
     expect(available).toBe(true);
   });
@@ -92,18 +79,18 @@ describe('OpenChamberAdapter', () => {
     expect(available).toBe(false);
   });
 
-  it('delivers context via append-prompt', async () => {
-    mockHttpSuccess(200);
+  it('calls openchamber.addToContext command', async () => {
     const result = await adapter.deliver(testBundle);
     expect(result.success).toBe(true);
-    expect(result.message).toBe('Added to OpenChamber prompt');
+    expect(result.message).toBe('Added to OpenChamber chat');
+    expect(mockedVscode.commands.executeCommand).toHaveBeenCalledWith('openchamber.addToContext');
   });
 
-  it('falls back to clipboard when server not reachable', async () => {
-    mockHttpError();
+  it('falls back to clipboard when extension not installed', async () => {
+    mockedVscode.commands.getCommands.mockResolvedValue(['some.other.command']);
     const result = await adapter.deliver(testBundle);
     expect(result.success).toBe(true);
-    expect(result.message).toContain('not available');
+    expect(result.message).toContain('not installed');
     expect(mockedVscode.env.clipboard.writeText).toHaveBeenCalled();
   });
 });
