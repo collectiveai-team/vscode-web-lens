@@ -4,6 +4,7 @@ import * as childProcess from 'child_process';
 import type { ContextBundle, DeliveryResult } from '../types';
 import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
+import { getOpenCodeAuthHeaders } from './auth';
 
 /**
  * Delivers browser context to OpenChamber (fedaykindev.openchamber).
@@ -104,7 +105,7 @@ export class OpenChamberAdapter implements BackendAdapter {
   private isReachable(hostname: string, port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const req = http.request(
-        { hostname, port, path: '/health', method: 'GET', timeout: 1500 },
+        { hostname, port, path: '/global/health', method: 'GET', timeout: 1500, headers: getOpenCodeAuthHeaders() },
         (res) => { resolve(res.statusCode === 200); res.resume(); }
       );
       req.on('error', () => resolve(false));
@@ -115,8 +116,8 @@ export class OpenChamberAdapter implements BackendAdapter {
 
   private appendPrompt(hostname: string, port: number, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // OpenCode expects { "prompt": text }
-      const body = JSON.stringify({ prompt: text });
+      // OpenCode server expects { "text": text }
+      const body = JSON.stringify({ text });
       const req = http.request(
         {
           hostname, port,
@@ -126,6 +127,7 @@ export class OpenChamberAdapter implements BackendAdapter {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Content-Length': Buffer.byteLength(body),
+            ...getOpenCodeAuthHeaders(),
           },
           timeout: 3000,
         },

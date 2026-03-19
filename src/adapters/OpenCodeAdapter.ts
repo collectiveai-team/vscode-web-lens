@@ -3,6 +3,7 @@ import * as http from 'http';
 import type { ContextBundle, DeliveryResult } from '../types';
 import type { BackendAdapter } from './BackendAdapter';
 import { ClipboardAdapter } from './ClipboardAdapter';
+import { getOpenCodeAuthHeaders } from './auth';
 
 /**
  * Delivers browser context to OpenCode via its HTTP API.
@@ -73,7 +74,7 @@ export class OpenCodeAdapter implements BackendAdapter {
   private isReachable(port: number): Promise<boolean> {
     return new Promise((resolve) => {
       const req = http.request(
-        { hostname: '127.0.0.1', port, path: '/health', method: 'GET', timeout: 1500 },
+        { hostname: '127.0.0.1', port, path: '/global/health', method: 'GET', timeout: 1500, headers: getOpenCodeAuthHeaders() },
         (res) => { resolve(res.statusCode === 200); res.resume(); }
       );
       req.on('error', () => resolve(false));
@@ -84,8 +85,8 @@ export class OpenCodeAdapter implements BackendAdapter {
 
   private appendPrompt(port: number, text: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // OpenCode expects { "prompt": text }, NOT { "text": text }
-      const body = JSON.stringify({ prompt: text });
+      // OpenCode server expects { "text": text }
+      const body = JSON.stringify({ text });
       const req = http.request(
         {
           hostname: '127.0.0.1',
@@ -96,6 +97,7 @@ export class OpenCodeAdapter implements BackendAdapter {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Content-Length': Buffer.byteLength(body),
+            ...getOpenCodeAuthHeaders(),
           },
           timeout: 3000,
         },

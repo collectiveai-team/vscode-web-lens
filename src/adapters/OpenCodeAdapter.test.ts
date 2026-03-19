@@ -98,10 +98,10 @@ describe('OpenCodeAdapter', () => {
     expect(result.success).toBe(true);
     expect(result.message).toBe('Added to OpenCode prompt');
 
-    // Verify the request body uses "prompt" not "text"
+    // Verify the request body uses "text" (what OpenCode server expects)
     const writeCall = mockReq.write.mock.calls[0][0];
     const body = JSON.parse(writeCall);
-    expect(body).toHaveProperty('prompt');
-    expect(body).not.toHaveProperty('text');
+    expect(body).toHaveProperty('text');
+    expect(body).not.toHaveProperty('prompt');
   });
 });
