@@ -70,8 +70,8 @@ describe('BrowserPanelManager', () => {
   it('creates a webview panel on open', async () => {
     await manager.open();
     expect(mockedVscode.window.createWebviewPanel).toHaveBeenCalledWith(
-      'browserChat',
-      'Browser Chat',
+      'webLens',
+      'Web Lens',
       1,
       expect.objectContaining({
         enableScripts: true,

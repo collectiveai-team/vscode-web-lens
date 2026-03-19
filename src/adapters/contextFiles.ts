@@ -35,7 +35,7 @@ function elementLabel(el: { tag: string; id?: string; classes: string[] }): stri
 export function formatContextFile(bundle: ContextBundle): string {
   const lines: string[] = [];
 
-  lines.push(`Browser Chat Context from ${bundle.url}`);
+  lines.push(`Web Lens Context from ${bundle.url}`);
   lines.push('');
 
   if (bundle.element) {
@@ -105,7 +105,7 @@ export function formatContextFile(bundle: ContextBundle): string {
  * Falls back to os.tmpdir() when no workspace is open.
  */
 export function resolveContextDir(): ContextDirInfo {
-  const config = vscode.workspace.getConfiguration('browserChat');
+  const config = vscode.workspace.getConfiguration('webLens');
   const configuredDir = config.get<string>('contextDirectory') || '.tmp';
 
   if (path.isAbsolute(configuredDir)) {

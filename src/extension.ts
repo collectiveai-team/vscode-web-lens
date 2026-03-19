@@ -21,13 +21,13 @@ const adapters: Record<string, BackendAdapter> = {
 };
 
 function getAdapter(): BackendAdapter {
-  const config = vscode.workspace.getConfiguration('browserChat');
+  const config = vscode.workspace.getConfiguration('webLens');
   const backendName = config.get<string>('backend') || 'clipboard';
   return adapters[backendName] || adapters.clipboard;
 }
 
 async function getBackendState(): Promise<{ active: string; available: Record<string, boolean> }> {
-  const config = vscode.workspace.getConfiguration('browserChat');
+  const config = vscode.workspace.getConfiguration('webLens');
   const active = config.get<string>('backend') || 'clipboard';
 
   const available: Record<string, boolean> = {};
@@ -108,7 +108,7 @@ export function activate(context: vscode.ExtensionContext) {
       case 'action:addLogs':
       case 'action:screenshot':
         deliverContext(message, currentUrl).catch((err) => {
-          console.error('Browser Chat: delivery error', err);
+          console.error('Web Lens: delivery error', err);
         });
         break;
       case 'backend:request': {
@@ -120,7 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
       case 'backend:select': {
         const newBackend = message.payload.backend;
         if (adapters[newBackend]) {
-          const config = vscode.workspace.getConfiguration('browserChat');
+          const config = vscode.workspace.getConfiguration('webLens');
           config.update('backend', newBackend, vscode.ConfigurationTarget.Global).then(() => {
             getBackendState().then((state) => {
               panelManager?.postMessage({ type: 'backend:state', payload: state });
@@ -135,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Listen for config changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('browserChat.backend')) {
+      if (e.affectsConfiguration('webLens.backend')) {
         const adapter = getAdapter();
         panelManager?.postMessage({
           type: 'config:update',
@@ -161,10 +161,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('browserChat.open', async () => {
+    vscode.commands.registerCommand('webLens.open', async () => {
       await panelManager!.open();
     }),
-    vscode.commands.registerCommand('browserChat.openUrl', async () => {
+    vscode.commands.registerCommand('webLens.openUrl', async () => {
       const url = await vscode.window.showInputBox({
         prompt: 'Enter URL to open',
         value: 'http://localhost:3000',
@@ -182,13 +182,13 @@ export function activate(context: vscode.ExtensionContext) {
         panelManager!.postMessage({ type: 'navigate:url', payload: { url } });
       }
     }),
-    vscode.commands.registerCommand('browserChat.inspect', () => {
+    vscode.commands.registerCommand('webLens.inspect', () => {
       panelManager?.postMessage({ type: 'mode:inspect', payload: { enabled: true } });
     }),
-    vscode.commands.registerCommand('browserChat.addElement', () => {
+    vscode.commands.registerCommand('webLens.addElement', () => {
       panelManager?.postMessage({ type: 'mode:addElement', payload: { enabled: true } });
     }),
-    vscode.commands.registerCommand('browserChat.addLogs', () => {
+    vscode.commands.registerCommand('webLens.addLogs', () => {
       // The webview toolbar button handles log capture directly via the
       // console capture buffer. This command palette entry triggers the
       // same flow by simulating the toolbar button click.
@@ -200,7 +200,7 @@ export function activate(context: vscode.ExtensionContext) {
         payload: { message: 'Use the toolbar button to capture logs', toastType: 'success' },
       });
     }),
-    vscode.commands.registerCommand('browserChat.screenshot', () => {
+    vscode.commands.registerCommand('webLens.screenshot', () => {
       panelManager?.postMessage({ type: 'screenshot:request', payload: {} });
     })
   );

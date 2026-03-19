@@ -47,7 +47,7 @@ describe('formatContextFile', () => {
 
     const result = formatContextFile(bundle);
 
-    expect(result).toContain('Browser Chat Context from http://localhost:3000');
+    expect(result).toContain('Web Lens Context from http://localhost:3000');
     expect(result).toContain('Element: div.banner');
     expect(result).toContain('Selector: body > main > div.banner');
     expect(result).toContain('Source: @src/App.tsx#L42');
@@ -199,7 +199,7 @@ describe('formatContextFile', () => {
 
     const result = formatContextFile(bundle);
 
-    expect(result).toContain('Browser Chat Context from http://localhost:3000');
+    expect(result).toContain('Web Lens Context from http://localhost:3000');
     expect(result).toContain('Console Logs:');
     expect(result).toContain('[ERROR] Something went wrong');
     expect(result).not.toContain('Element:');

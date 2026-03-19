@@ -119,6 +119,6 @@ describe('OpenCodeAdapter', () => {
     const body = JSON.parse(writeCall);
     expect(body).toHaveProperty('text');
     expect(body.text).toMatch(/@.*browser-context-\d+\.txt/);
-    expect(body.text).not.toContain('[Browser Chat] Context from');
+    expect(body.text).not.toContain('[Web Lens] Context from');
   });
 });

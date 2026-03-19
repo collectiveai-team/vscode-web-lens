@@ -17,7 +17,7 @@ export class BrowserPanelManager {
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
-    const config = vscode.workspace.getConfiguration('browserChat');
+    const config = vscode.workspace.getConfiguration('webLens');
     this.state = {
       url: config.get<string>('defaultUrl') || 'http://localhost:3000',
       history: [],
@@ -36,8 +36,8 @@ export class BrowserPanelManager {
     await this.proxyServer.start();
 
     this.panel = vscode.window.createWebviewPanel(
-      'browserChat',
-      'Browser Chat',
+      'webLens',
+      'Web Lens',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -102,7 +102,7 @@ export class BrowserPanelManager {
         this.onIframeLoaded(message.payload.url);
         break;
       case 'menu:openSettings':
-        vscode.commands.executeCommand('workbench.action.openSettings', 'browserChat');
+        vscode.commands.executeCommand('workbench.action.openSettings', 'webLens');
         break;
       case 'menu:copyHtml':
         vscode.env.clipboard.writeText(message.payload.html);
@@ -199,7 +199,7 @@ export class BrowserPanelManager {
   ">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
   <link href="${styleUri}" rel="stylesheet">
-  <title>Browser Chat</title>
+  <title>Web Lens</title>
 </head>
 <body data-theme="${dataTheme}">
   <div id="backend-icons" hidden

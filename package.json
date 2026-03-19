@@ -1,53 +1,53 @@
 {
-  "name": "browser-chat",
-  "displayName": "Browser Chat",
+  "name": "web-lens",
+  "displayName": "Web Lens",
   "description": "Embedded browser for sending page context to AI coding agents",
   "version": "0.1.0",
-  "publisher": "collective-ai",
+  "publisher": "collectiveai-team",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
   "main": "./out/extension.js",
-  "activationEvents": ["onCommand:browserChat.open"],
+  "activationEvents": ["onCommand:webLens.open"],
   "contributes": {
     "commands": [
-      { "command": "browserChat.open", "title": "Browser Chat: Open" },
-      { "command": "browserChat.openUrl", "title": "Browser Chat: Open URL" },
-      { "command": "browserChat.inspect", "title": "Browser Chat: Inspect Element" },
-      { "command": "browserChat.addElement", "title": "Browser Chat: Add Element to Chat" },
-      { "command": "browserChat.addLogs", "title": "Browser Chat: Add Logs to Chat" },
-      { "command": "browserChat.screenshot", "title": "Browser Chat: Screenshot" }
+      { "command": "webLens.open", "title": "Web Lens: Open" },
+      { "command": "webLens.openUrl", "title": "Web Lens: Open URL" },
+      { "command": "webLens.inspect", "title": "Web Lens: Inspect Element" },
+      { "command": "webLens.addElement", "title": "Web Lens: Add Element to Chat" },
+      { "command": "webLens.addLogs", "title": "Web Lens: Add Logs to Chat" },
+      { "command": "webLens.screenshot", "title": "Web Lens: Screenshot" }
     ],
     "configuration": {
-      "title": "Browser Chat",
+      "title": "Web Lens",
       "properties": {
-        "browserChat.backend": {
+        "webLens.backend": {
           "type": "string",
           "default": "clipboard",
           "enum": ["opencode", "openchamber", "codex", "claudecode", "clipboard"],
           "description": "Active backend for delivering context to AI agent"
         },
-        "browserChat.defaultUrl": {
+        "webLens.defaultUrl": {
           "type": "string",
           "default": "http://localhost:3000",
           "description": "URL loaded when browser panel opens"
         },
-        "browserChat.screenshotFormat": {
+        "webLens.screenshotFormat": {
           "type": "string",
           "default": "png",
           "enum": ["png", "jpeg"],
           "description": "Screenshot image format"
         },
-        "browserChat.screenshotQuality": {
+        "webLens.screenshotQuality": {
           "type": "number",
           "default": 0.9,
           "minimum": 0.1,
           "maximum": 1.0,
           "description": "JPEG quality (0-1), ignored for PNG"
         },
-        "browserChat.contextDirectory": {
+        "webLens.contextDirectory": {
           "type": "string",
           "default": ".tmp",
           "description": "Directory for context files (screenshots and element data). Relative paths resolve from workspace root. Absolute paths used as-is."

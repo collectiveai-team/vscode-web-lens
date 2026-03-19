@@ -130,7 +130,7 @@ export class ProxyServer {
       path: targetUrl.pathname + targetUrl.search,
       method: 'GET',
       headers: {
-        'User-Agent': 'BrowserChat-Proxy/1.0',
+        'User-Agent': 'WebLens-Proxy/1.0',
         'Accept': '*/*',
       },
     };
@@ -238,12 +238,12 @@ export class ProxyServer {
   private sendError(res: http.ServerResponse, statusCode: number, message: string) {
     const html = `<!DOCTYPE html>
 <html>
-<head><title>Browser Chat Proxy Error</title></head>
+<head><title>Web Lens Proxy Error</title></head>
 <body style="font-family:system-ui,sans-serif;padding:40px;color:#ccc;background:#1e1e1e;">
   <h2 style="color:#e74c3c;">Proxy Error (${statusCode})</h2>
   <p>${this.escapeHtml(message)}</p>
   <p style="color:#888;font-size:12px;margin-top:20px;">
-    This page is served by the Browser Chat proxy. The target URL could not be loaded.
+    This page is served by the Web Lens proxy. The target URL could not be loaded.
   </p>
 </body>
 </html>`;

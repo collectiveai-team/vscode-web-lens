@@ -11,7 +11,7 @@ export class ClipboardAdapter implements BackendAdapter {
       const result = await saveContextFiles(bundle);
       cleanupOldFiles(result.dir); // fire-and-forget
 
-      const lines = ['[Browser Chat] Context saved to:'];
+      const lines = ['[Web Lens] Context saved to:'];
       if (result.screenshotPath) {
         lines.push(`  Screenshot: ${result.screenshotPath}`);
       }
