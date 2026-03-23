@@ -1,22 +1,37 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type WebviewMessageHandler = (message: { type: string; payload: Record<string, unknown> }) => void;
+
+const mockState = vi.hoisted(() => ({
+  proxyServerMock: vi.fn(),
+  createWebviewPanelMock: vi.fn(),
+  lastMessageHandler: undefined as WebviewMessageHandler | undefined,
+}));
+
 // Mock the ProxyServer module
 vi.mock('../proxy/ProxyServer', () => ({
-  ProxyServer: vi.fn().mockImplementation(() => ({
+  ProxyServer: mockState.proxyServerMock.mockImplementation(() => ({
     start: vi.fn().mockResolvedValue(9876),
     stop: vi.fn().mockResolvedValue(undefined),
     getPort: vi.fn().mockReturnValue(9876),
-    getProxiedUrl: vi.fn((url: string) => `http://127.0.0.1:9876/?url=${encodeURIComponent(url)}`),
+    getProxiedUrl: vi.fn((url: string) => {
+      const parsed = new URL(url);
+      return `http://127.0.0.1:9876${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }),
+    getOriginalUrl: vi.fn((url: string) => url),
+    getTargetOrigin: vi.fn().mockReturnValue('http://localhost:3000'),
   })),
 }));
 
 // Mock vscode module
 vi.mock('vscode', () => ({
   window: {
-    createWebviewPanel: vi.fn().mockReturnValue({
+    createWebviewPanel: mockState.createWebviewPanelMock.mockImplementation(() => ({
       webview: {
         html: '',
-        onDidReceiveMessage: vi.fn(),
+        onDidReceiveMessage: vi.fn((handler: WebviewMessageHandler) => {
+          mockState.lastMessageHandler = handler;
+        }),
         postMessage: vi.fn(),
         asWebviewUri: vi.fn((uri: any) => uri),
         cspSource: 'https://example.com',
@@ -24,7 +39,7 @@ vi.mock('vscode', () => ({
       onDidDispose: vi.fn(),
       reveal: vi.fn(),
       dispose: vi.fn(),
-    }),
+    })),
     createOutputChannel: vi.fn().mockReturnValue({
       appendLine: vi.fn(),
       show: vi.fn(),
@@ -69,6 +84,7 @@ describe('BrowserPanelManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockState.lastMessageHandler = undefined;
     manager = new BrowserPanelManager(mockExtensionUri);
   });
 
@@ -83,6 +99,38 @@ describe('BrowserPanelManager', () => {
         retainContextWhenHidden: true,
       })
     );
+  });
+
+  it('constructs the proxy server with the default target url', () => {
+    expect(mockState.proxyServerMock).toHaveBeenCalledWith(
+      '/fake/extension/path',
+      'http://localhost:3000'
+    );
+  });
+
+  it('includes the target origin in the webview body attributes', async () => {
+    await manager.open();
+
+    const panel = mockedVscode.window.createWebviewPanel.mock.results[0]?.value;
+    expect(panel?.webview.html).toContain('data-target-origin="http://localhost:3000"');
+  });
+
+  it('resolves iframe relative URLs against the target origin', async () => {
+    await manager.open();
+
+    const panel = mockedVscode.window.createWebviewPanel.mock.results[0]?.value;
+    const postMessage = panel?.webview.postMessage as ReturnType<typeof vi.fn>;
+    postMessage.mockClear();
+
+    mockState.lastMessageHandler?.({
+      type: 'iframe:loaded',
+      payload: { url: '/docs?page=1#intro' },
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'navigate:url',
+      payload: { url: 'http://127.0.0.1:9876/docs?page=1#intro' },
+    });
   });
 
   it('reuses existing panel on second open call', async () => {

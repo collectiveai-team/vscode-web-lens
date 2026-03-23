@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createConsoleCapture, createConsoleReceiver } from './console-capture';
+import { createConsoleReceiver } from './console-capture';
 
 type MockWindow = EventTarget & {
   addEventListener: typeof globalThis.addEventListener;
@@ -111,24 +111,5 @@ describe('createConsoleReceiver', () => {
     postConsoleMessage('log', 'after detach');
 
     expect(receiver.getEntries()).toHaveLength(0);
-  });
-
-  it('keeps temporary createConsoleCapture compatibility wrapper working', () => {
-    const legacyConsole = { log() {}, warn() {}, error() {} };
-    const onEntry = vi.fn();
-    const receiver = createConsoleCapture(legacyConsole, onEntry);
-
-    postConsoleMessage('warn', 'legacy path', 999);
-
-    expect(receiver.getEntries()).toEqual([
-      { level: 'warn', message: 'legacy path', timestamp: 999 },
-    ]);
-    expect(onEntry).toHaveBeenCalledWith({
-      level: 'warn',
-      message: 'legacy path',
-      timestamp: 999,
-    });
-
-    receiver.detach();
   });
 });

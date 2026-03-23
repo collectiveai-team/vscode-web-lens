@@ -54,8 +54,3 @@ export function createConsoleReceiver(onEntry?: (entry: ConsoleEntry) => void) {
     },
   };
 }
-
-/** @deprecated Use createConsoleReceiver instead. Temporary alias for backwards compatibility. */
-export function createConsoleCapture(_legacyConsole?: unknown, onEntry?: (entry: ConsoleEntry) => void) {
-  return createConsoleReceiver(onEntry);
-}

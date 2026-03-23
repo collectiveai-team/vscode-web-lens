@@ -24,7 +24,7 @@ export class BrowserPanelManager {
       history: [],
       historyIndex: -1,
     };
-    this.proxyServer = new ProxyServer(extensionUri.fsPath);
+    this.proxyServer = new ProxyServer(extensionUri.fsPath, this.state.url);
   }
 
   async open() {
@@ -161,9 +161,11 @@ export class BrowserPanelManager {
 
   private onIframeLoaded(url: string) {
     webLensLogger.info('Iframe reported load', { url });
-    if (url !== this.state.url) {
-      // iframe navigated internally — update history with the original URL
-      this.navigate(url);
+    const fullUrl = url.startsWith('/')
+      ? `${this.proxyServer.getTargetOrigin()}${url}`
+      : url;
+    if (fullUrl !== this.state.url) {
+      this.navigate(fullUrl);
     }
   }
 
@@ -212,7 +214,7 @@ export class BrowserPanelManager {
   <link href="${styleUri}" rel="stylesheet">
   <title>Web Lens</title>
 </head>
-<body data-theme="${dataTheme}">
+<body data-theme="${dataTheme}" data-target-origin="${this.proxyServer.getTargetOrigin()}">
   <div id="backend-icons" hidden
     data-opencode-light="${opencodeLight}"
     data-opencode-dark="${opencodeDark}"
