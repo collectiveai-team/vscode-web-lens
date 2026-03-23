@@ -255,14 +255,14 @@ export class ProxyServer {
       ? tls.connect({ host: this.targetHostname, port: this.targetPort, servername: this.targetHostname })
       : net.connect(this.targetPort, this.targetHostname);
     const readyEvent = this.targetIsHttps ? 'secureConnect' : 'connect';
-
-    targetSocket.setTimeout(10000, () => {
+    const connectTimeout = setTimeout(() => {
       webLensLogger.error('Proxy WebSocket target timed out', { path: requestPath });
       targetSocket.destroy();
       clientSocket.destroy();
-    });
+    }, 10000);
 
     targetSocket.once(readyEvent, () => {
+      clearTimeout(connectTimeout);
       const headers = this.prepareRequestHeaders(req.headers);
       headers['connection'] = 'Upgrade';
       headers['upgrade'] = req.headers['upgrade'] || 'websocket';
@@ -290,6 +290,7 @@ export class ProxyServer {
     });
 
     targetSocket.on('error', (err) => {
+      clearTimeout(connectTimeout);
       webLensLogger.error('Proxy WebSocket target error', { path: requestPath, error: err.message });
       clientSocket.destroy();
     });
@@ -299,7 +300,10 @@ export class ProxyServer {
       targetSocket.destroy();
     });
 
-    targetSocket.on('close', () => clientSocket.destroy());
+    targetSocket.on('close', () => {
+      clearTimeout(connectTimeout);
+      clientSocket.destroy();
+    });
     clientSocket.on('close', () => targetSocket.destroy());
   }
 
