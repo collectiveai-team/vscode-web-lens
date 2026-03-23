@@ -16,9 +16,20 @@ export class ProxyServer {
   private server: http.Server | null = null;
   private port = 0;
   private injectScriptPath: string;
+  private targetOrigin: string; // e.g. "http://localhost:3000"
+  private targetHost: string;   // e.g. "localhost:3000"
+  private targetHostname: string; // e.g. "localhost"
+  private targetPort: number;    // e.g. 3000
+  private targetIsHttps: boolean;
 
-  constructor(extensionPath: string) {
+  constructor(extensionPath: string, targetOrigin: string) {
     this.injectScriptPath = path.join(extensionPath, 'out', 'inject.js');
+    const parsed = new URL(targetOrigin);
+    this.targetOrigin = `${parsed.protocol}//${parsed.host}`;
+    this.targetHost = parsed.host;
+    this.targetHostname = parsed.hostname;
+    this.targetPort = parseInt(parsed.port, 10) || (parsed.protocol === 'https:' ? 443 : 80);
+    this.targetIsHttps = parsed.protocol === 'https:';
   }
 
   /** Start the proxy on a random available port. Resolves with the port. */
@@ -69,7 +80,28 @@ export class ProxyServer {
 
   /** Build the proxied URL for a given target URL. */
   getProxiedUrl(targetUrl: string): string {
-    return `http://127.0.0.1:${this.port}/?url=${encodeURIComponent(targetUrl)}`;
+    const parsed = new URL(targetUrl);
+    const proxyOrigin = `http://127.0.0.1:${this.port}`;
+    return `${proxyOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  }
+
+  /** Convert a proxy-space URL back to the original target URL. */
+  getOriginalUrl(proxyUrl: string): string {
+    try {
+      const parsed = new URL(proxyUrl);
+      const proxyOrigin = `http://127.0.0.1:${this.port}`;
+      if (`${parsed.protocol}//${parsed.host}` !== proxyOrigin) {
+        return proxyUrl; // Not a proxy URL
+      }
+      return `${this.targetOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return proxyUrl;
+    }
+  }
+
+  /** The normalized origin of the proxied target (e.g. "http://localhost:3000"). */
+  getTargetOrigin(): string {
+    return this.targetOrigin;
   }
 
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
