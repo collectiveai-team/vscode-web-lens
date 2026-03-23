@@ -16,6 +16,7 @@ export type WebviewMessage =
   | { type: 'menu:copyHtml'; payload: { html: string } }
   | { type: 'menu:clearSelection'; payload: Record<string, never> }
   | { type: 'menu:openSettings'; payload: Record<string, never> }
+  | { type: 'diagnostic:log'; payload: DiagnosticPayload }
   | { type: 'backend:request'; payload: Record<string, never> }
   | { type: 'backend:select'; payload: { backend: string } };
 
@@ -100,6 +101,13 @@ export interface ConsoleEntry {
   level: 'log' | 'warn' | 'error';
   message: string;
   timestamp: number;
+}
+
+export interface DiagnosticPayload {
+  source: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  details?: string;
 }
 
 export interface DeliveryResult {

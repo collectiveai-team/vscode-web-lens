@@ -59,4 +59,19 @@ describe('createConsoleCapture', () => {
     mockConsole.log('test');
     expect(origLog.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('notifies listeners when a new entry is captured', () => {
+    const onEntry = vi.fn();
+    capture = createConsoleCapture(mockConsole as any, onEntry);
+
+    mockConsole.error('boom');
+
+    expect(onEntry).toHaveBeenCalledTimes(1);
+    expect(onEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'error',
+        message: 'boom',
+      })
+    );
+  });
 });

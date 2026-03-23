@@ -16,6 +16,13 @@ function postMessage(msg: unknown) {
   vscode.postMessage(msg);
 }
 
+function postDiagnostic(level: 'info' | 'warn' | 'error', source: string, message: string, details?: string) {
+  postMessage({
+    type: 'diagnostic:log',
+    payload: { source, level, message, details },
+  });
+}
+
 // ── Console capture state (per iframe) ──────────────────────
 let consoleCapture: ReturnType<typeof createConsoleCapture> | null = null;
 
@@ -90,20 +97,38 @@ iframe.addEventListener('load', () => {
       const iframeConsole = (iframe.contentWindow as any)?.console as Console | undefined;
       if (iframeConsole) {
         consoleCapture?.detach();
-        consoleCapture = createConsoleCapture(iframeConsole);
+        consoleCapture = createConsoleCapture(iframeConsole, (entry) => {
+          postDiagnostic(entry.level === 'log' ? 'info' : entry.level, 'page.console', entry.message);
+        });
       }
     } catch {
       // Cross-origin — skip
     }
   }
+
+  postDiagnostic('info', 'webview', 'Iframe loaded', `url=${originalUrl || url}; canInject=${String(canInject)}`);
 });
 
 iframe.addEventListener('error', () => {
   const originalUrl = extractOriginalUrl(iframe.src);
+  postDiagnostic('error', 'webview', 'Iframe failed to load', originalUrl || iframe.src);
   postMessage({
     type: 'iframe:error',
     payload: { url: originalUrl || iframe.src, error: 'Failed to load page' },
   });
+});
+
+window.addEventListener('error', (event: ErrorEvent) => {
+  postDiagnostic(
+    'error',
+    'webview',
+    event.message || 'Unhandled webview error',
+    formatUnknown(event.error || event.filename || 'unknown error')
+  );
+});
+
+window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+  postDiagnostic('error', 'webview', 'Unhandled promise rejection', formatUnknown(event.reason));
 });
 
 // Request initial backend state so the toolbar icon is correct from the start
@@ -184,4 +209,20 @@ function showToast(message: string, toastType: 'success' | 'error') {
   document.body.appendChild(toast);
 
   setTimeout(() => toast.remove(), 2600);
+}
+
+function formatUnknown(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack || value.message;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

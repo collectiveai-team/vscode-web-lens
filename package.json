@@ -44,6 +44,10 @@
       {
         "command": "webLens.screenshot",
         "title": "Web Lens: Screenshot"
+      },
+      {
+        "command": "webLens.showLogs",
+        "title": "Web Lens: Show Logs"
       }
     ],
     "configuration": {

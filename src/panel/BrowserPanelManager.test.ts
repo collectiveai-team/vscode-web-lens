@@ -25,6 +25,11 @@ vi.mock('vscode', () => ({
       reveal: vi.fn(),
       dispose: vi.fn(),
     }),
+    createOutputChannel: vi.fn().mockReturnValue({
+      appendLine: vi.fn(),
+      show: vi.fn(),
+      dispose: vi.fn(),
+    }),
     activeColorTheme: { kind: 2 },
   },
   ColorThemeKind: {

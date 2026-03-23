@@ -46,6 +46,40 @@ let selectedElement: HTMLElement | null = null;
 
 const MAX_SCREENSHOT_SIZE = 2 * 1024 * 1024; // 2MB
 
+window.addEventListener('error', (event: ErrorEvent) => {
+  postToParent({
+    type: 'bc:diagnostic',
+    payload: {
+      source: 'page',
+      level: 'error',
+      message: event.message || 'Unhandled page error',
+      details: formatDiagnosticDetails(event.error || event.filename || window.location.href),
+    },
+  });
+});
+
+window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+  postToParent({
+    type: 'bc:diagnostic',
+    payload: {
+      source: 'page',
+      level: 'error',
+      message: 'Unhandled promise rejection',
+      details: formatDiagnosticDetails(event.reason),
+    },
+  });
+});
+
+postToParent({
+  type: 'bc:diagnostic',
+  payload: {
+    source: 'page',
+    level: 'info',
+    message: 'Inject script attached',
+    details: window.location.href,
+  },
+});
+
 // ── Message listener (from parent webview) ──────────────────
 
 window.addEventListener('message', (event: MessageEvent) => {
@@ -457,4 +491,20 @@ function truncate(str: string, maxLen: number): string {
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatDiagnosticDetails(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack || value.message;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

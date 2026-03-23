@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { WebviewMessage, ExtensionMessage } from '../types';
 import { ProxyServer } from '../proxy/ProxyServer';
+import { webLensLogger } from '../logging';
 
 interface PanelState {
   url: string;
@@ -28,12 +29,14 @@ export class BrowserPanelManager {
 
   async open() {
     if (this.panel) {
+      webLensLogger.info('Revealing existing panel');
       this.panel.reveal();
       return;
     }
 
     // Start the proxy server before creating the panel
     await this.proxyServer.start();
+    webLensLogger.info('Opening browser panel', { url: this.state.url });
 
     this.panel = vscode.window.createWebviewPanel(
       'webLens',
@@ -57,6 +60,7 @@ export class BrowserPanelManager {
     );
 
     this.panel.onDidDispose(() => {
+      webLensLogger.info('Browser panel disposed');
       this.panel = undefined;
       this.proxyServer.stop().catch(() => {
         // Ignore stop errors on dispose
@@ -124,6 +128,7 @@ export class BrowserPanelManager {
     this.state.history.push(url);
     this.state.historyIndex = this.state.history.length - 1;
     this.state.url = url;
+    webLensLogger.info('Navigating browser panel', { url });
 
     // Route through proxy
     const proxiedUrl = this.proxyServer.getProxiedUrl(url);
@@ -149,11 +154,13 @@ export class BrowserPanelManager {
   }
 
   private reload() {
+    webLensLogger.info('Reloading browser panel', { url: this.state.url });
     const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
     this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
   }
 
   private onIframeLoaded(url: string) {
+    webLensLogger.info('Iframe reported load', { url });
     if (url !== this.state.url) {
       // iframe navigated internally — update history with the original URL
       this.navigate(url);

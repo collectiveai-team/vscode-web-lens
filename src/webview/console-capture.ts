@@ -3,7 +3,7 @@ import type { ConsoleEntry } from '../types';
 const MAX_ENTRIES = 200;
 const MAX_BUFFER_SIZE = 50000; // ~50KB
 
-export function createConsoleCapture(console: Console) {
+export function createConsoleCapture(console: Console, onEntry?: (entry: ConsoleEntry) => void) {
   const buffer: ConsoleEntry[] = [];
   let bufferSize = 0;
 
@@ -31,6 +31,8 @@ export function createConsoleCapture(console: Console) {
 
     buffer.push(entry);
     bufferSize += message.length;
+
+    onEntry?.(entry);
 
     // Evict oldest entries if over limits
     while (buffer.length > MAX_ENTRIES || bufferSize > MAX_BUFFER_SIZE) {

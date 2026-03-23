@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
+import { webLensLogger } from '../logging';
 
 /**
  * HTTP proxy server that fetches target pages and injects our inspect script.
@@ -35,6 +36,7 @@ export class ProxyServer {
         const addr = this.server!.address();
         if (typeof addr === 'object' && addr) {
           this.port = addr.port;
+          webLensLogger.info('Proxy server started', { port: this.port });
           resolve(this.port);
         } else {
           reject(new Error('Failed to get server address'));
@@ -53,6 +55,7 @@ export class ProxyServer {
         return;
       }
       this.server.close(() => {
+        webLensLogger.info('Proxy server stopped');
         this.server = null;
         this.port = 0;
         resolve();
@@ -121,6 +124,7 @@ export class ProxyServer {
   }
 
   private proxyRequest(targetUrl: URL, res: http.ServerResponse) {
+    webLensLogger.info('Proxy request started', { url: targetUrl.href });
     const isHttps = targetUrl.protocol === 'https:';
     const requestModule = isHttps ? https : http;
 
@@ -130,6 +134,7 @@ export class ProxyServer {
       path: targetUrl.pathname + targetUrl.search,
       method: 'GET',
       headers: {
+        'Host': targetUrl.host,
         'User-Agent': 'WebLens-Proxy/1.0',
         'Accept': '*/*',
       },
@@ -147,9 +152,13 @@ export class ProxyServer {
           let html = Buffer.concat(chunks).toString('utf-8');
           html = this.injectScript(html);
           html = this.rewriteUrls(html, targetUrl);
+          webLensLogger.info('Proxy HTML response', {
+            url: targetUrl.href,
+            statusCode: proxyRes.statusCode || 200,
+          });
 
           // Forward headers but override content-length
-          const headers = { ...proxyRes.headers };
+          const headers = this.stripHopByHopHeaders(proxyRes.headers);
           delete headers['content-length'];
           delete headers['content-encoding'];
           // Remove security headers that would block our injection
@@ -161,8 +170,13 @@ export class ProxyServer {
           res.end(html);
         });
       } else {
+        webLensLogger.info('Proxy asset response', {
+          url: targetUrl.href,
+          statusCode: proxyRes.statusCode || 200,
+          contentType,
+        });
         // Non-HTML: stream through unchanged
-        const headers = { ...proxyRes.headers };
+        const headers = this.stripHopByHopHeaders(proxyRes.headers);
         // Remove frame-blocking headers for non-HTML too
         delete headers['x-frame-options'];
         delete headers['content-security-policy'];
@@ -172,11 +186,13 @@ export class ProxyServer {
     });
 
     proxyReq.on('error', (err) => {
+      webLensLogger.error('Proxy request failed', { url: targetUrl.href, error: err.message });
       this.sendError(res, 502, `Failed to fetch ${targetUrl.href}: ${err.message}`);
     });
 
     proxyReq.setTimeout(10000, () => {
       proxyReq.destroy();
+      webLensLogger.error('Proxy request timed out', { url: targetUrl.href });
       this.sendError(res, 504, `Request to ${targetUrl.href} timed out`);
     });
 
@@ -185,22 +201,34 @@ export class ProxyServer {
 
   /** Inject our inspect script before </body> (or at end of document). */
   private injectScript(html: string): string {
-    const scriptTag = `<script src="http://127.0.0.1:${this.port}/__bc_inject.js"></script>`;
+    const externalScriptTag = `<script src="http://127.0.0.1:${this.port}/__bc_inject.js"></script>`;
+    const bootstrapScriptTag = `<script>(function(){var post=function(level,message,details){try{window.parent.postMessage({type:'bc:diagnostic',payload:{source:'page.bootstrap',level:level,message:message,details:details}},'*');}catch{}};var format=function(value){if(value instanceof Error){return value.stack||value.message;}if(typeof value==='string'){return value;}try{return JSON.stringify(value);}catch{return String(value);}};var patchHistory=function(method){var orig=history[method];history[method]=function(state,title,url){try{return orig.call(this,state,title,url);}catch(e){if(e.name==='SecurityError'){post('warn','Suppressed cross-origin '+method,String(url));return;}throw e;}};};patchHistory('pushState');patchHistory('replaceState');window.addEventListener('error',function(event){post('error',event.message||'Unhandled page error',format(event.error||event.filename||window.location.href));});window.addEventListener('unhandledrejection',function(event){post('error','Unhandled promise rejection',format(event.reason));});post('info','Bootstrap attached',window.location.href);})();</script>`;
+    const injection = `${bootstrapScriptTag}${externalScriptTag}`;
 
-    // Try to inject before </body>
+    const firstScriptIndex = html.search(/<script\b/i);
+    if (firstScriptIndex !== -1) {
+      return html.slice(0, firstScriptIndex) + injection + html.slice(firstScriptIndex);
+    }
+
+    const headOpenIndex = html.search(/<head[^>]*>/i);
+    if (headOpenIndex !== -1) {
+      const headCloseAngle = html.indexOf('>', headOpenIndex);
+      if (headCloseAngle !== -1) {
+        return html.slice(0, headCloseAngle + 1) + injection + html.slice(headCloseAngle + 1);
+      }
+    }
+
     const bodyCloseIndex = html.lastIndexOf('</body>');
     if (bodyCloseIndex !== -1) {
-      return html.slice(0, bodyCloseIndex) + scriptTag + html.slice(bodyCloseIndex);
+      return html.slice(0, bodyCloseIndex) + injection + html.slice(bodyCloseIndex);
     }
 
-    // Try before </html>
     const htmlCloseIndex = html.lastIndexOf('</html>');
     if (htmlCloseIndex !== -1) {
-      return html.slice(0, htmlCloseIndex) + scriptTag + html.slice(htmlCloseIndex);
+      return html.slice(0, htmlCloseIndex) + injection + html.slice(htmlCloseIndex);
     }
 
-    // Fallback: append at end
-    return html + scriptTag;
+    return html + injection;
   }
 
   /**
@@ -233,6 +261,29 @@ export class ProxyServer {
     }
 
     return html;
+  }
+
+  /**
+   * Strip hop-by-hop headers that must not be forwarded by proxies.
+   * Forwarding these (especially `connection` and `transfer-encoding`)
+   * causes HTTP parse errors in the client.
+   */
+  private stripHopByHopHeaders(headers: http.IncomingHttpHeaders): http.IncomingHttpHeaders {
+    const cleaned = { ...headers };
+    const hopByHop = [
+      'connection',
+      'keep-alive',
+      'transfer-encoding',
+      'te',
+      'trailer',
+      'upgrade',
+      'proxy-authorization',
+      'proxy-authenticate',
+    ];
+    for (const h of hopByHop) {
+      delete cleaned[h];
+    }
+    return cleaned;
   }
 
   private sendError(res: http.ServerResponse, statusCode: number, message: string) {

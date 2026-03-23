@@ -107,6 +107,18 @@ export function createInspectOverlay(
         // The inject script exited mode (e.g. ESC pressed inside iframe)
         currentMode = 'off';
         break;
+
+      case 'bc:diagnostic':
+        postMessage({
+          type: 'diagnostic:log',
+          payload: {
+            source: data.payload?.source || 'page',
+            level: data.payload?.level || 'info',
+            message: data.payload?.message || 'Diagnostic event',
+            details: data.payload?.details,
+          },
+        });
+        break;
     }
   });
 

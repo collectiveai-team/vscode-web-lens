@@ -8,6 +8,7 @@ import { OpenChamberAdapter } from './adapters/OpenChamberAdapter';
 import { CodexAdapter } from './adapters/CodexAdapter';
 import { ClaudeCodeAdapter } from './adapters/ClaudeCodeAdapter';
 import type { WebviewMessage } from './types';
+import { webLensLogger } from './logging';
 
 let panelManager: BrowserPanelManager | undefined;
 let contextExtractor: ContextExtractor;
@@ -86,6 +87,7 @@ async function deliverContext(message: WebviewMessage, url: string) {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  webLensLogger.info('Extension activated');
   contextExtractor = new ContextExtractor();
   panelManager = new BrowserPanelManager(context.extensionUri);
 
@@ -98,17 +100,30 @@ export function activate(context: vscode.ExtensionContext) {
         currentUrl = message.payload.url;
         break;
       case 'iframe:error':
+        webLensLogger.error('Iframe load error', message.payload);
         panelManager?.postMessage({
           type: 'toast',
           payload: { message: `Failed to load: ${message.payload.error}`, toastType: 'error' },
         });
         break;
+      case 'diagnostic:log': {
+        const logMessage = `${message.payload.source}: ${message.payload.message}`;
+        if (message.payload.level === 'error') {
+          webLensLogger.error(logMessage, message.payload.details);
+        } else if (message.payload.level === 'warn') {
+          webLensLogger.warn(logMessage, message.payload.details);
+        } else {
+          webLensLogger.info(logMessage, message.payload.details);
+        }
+        break;
+      }
       case 'inspect:sendToChat':
       case 'addElement:captured':
       case 'action:addLogs':
       case 'action:screenshot':
         deliverContext(message, currentUrl).catch((err) => {
           console.error('Web Lens: delivery error', err);
+          webLensLogger.error('Context delivery error', err);
         });
         break;
       case 'backend:request': {
@@ -162,6 +177,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand('webLens.open', async () => {
+      webLensLogger.info('Open command invoked');
       await panelManager!.open();
     }),
     vscode.commands.registerCommand('webLens.openUrl', async () => {
@@ -202,6 +218,9 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('webLens.screenshot', () => {
       panelManager?.postMessage({ type: 'screenshot:request', payload: {} });
+    }),
+    vscode.commands.registerCommand('webLens.showLogs', () => {
+      webLensLogger.show();
     })
   );
 }
@@ -209,4 +228,6 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
   panelManager?.dispose();
   panelManager = undefined;
+  webLensLogger.info('Extension deactivated');
+  webLensLogger.dispose();
 }
