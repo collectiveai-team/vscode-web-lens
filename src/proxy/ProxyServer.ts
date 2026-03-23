@@ -107,7 +107,7 @@ export class ProxyServer {
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     // CORS headers on all responses
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
 
     if (req.method === 'OPTIONS') {
@@ -116,30 +116,19 @@ export class ProxyServer {
       return;
     }
 
-    const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${this.port}`);
+    const requestPath = req.url || '/';
 
-    // Serve the inject script bundle
-    if (requestUrl.pathname === '/__bc_inject.js') {
-      this.serveInjectScript(res);
+    // Serve internal endpoints
+    if (requestPath.startsWith('/__web_lens/')) {
+      if (requestPath === '/__web_lens/inject.js') {
+        this.serveInjectScript(res);
+      } else {
+        this.sendError(res, 404, `Unknown internal endpoint: ${requestPath}`);
+      }
       return;
     }
 
-    // All other requests need a `url` query param
-    const targetUrlStr = requestUrl.searchParams.get('url');
-    if (!targetUrlStr) {
-      this.sendError(res, 400, 'Missing ?url= parameter');
-      return;
-    }
-
-    let targetUrl: URL;
-    try {
-      targetUrl = new URL(targetUrlStr);
-    } catch {
-      this.sendError(res, 400, `Invalid target URL: ${targetUrlStr}`);
-      return;
-    }
-
-    this.proxyRequest(targetUrl, res);
+    this.proxyRequest(req, res);
   }
 
   private serveInjectScript(res: http.ServerResponse) {
@@ -155,80 +144,159 @@ export class ProxyServer {
     }
   }
 
-  private proxyRequest(targetUrl: URL, res: http.ServerResponse) {
-    webLensLogger.info('Proxy request started', { url: targetUrl.href });
-    const isHttps = targetUrl.protocol === 'https:';
-    const requestModule = isHttps ? https : http;
+  private proxyRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+    const requestPath = req.url || '/';
+    webLensLogger.info('Proxy request started', { method: req.method, path: requestPath });
+
+    const requestModule = this.targetIsHttps ? https : http;
+    const headers = this.prepareRequestHeaders(req.headers);
 
     const options: http.RequestOptions = {
-      hostname: targetUrl.hostname,
-      port: targetUrl.port || (isHttps ? 443 : 80),
-      path: targetUrl.pathname + targetUrl.search,
-      method: 'GET',
-      headers: {
-        'Host': targetUrl.host,
-        'User-Agent': 'WebLens-Proxy/1.0',
-        'Accept': '*/*',
-      },
+      hostname: this.targetHostname,
+      port: this.targetPort,
+      path: requestPath,
+      method: req.method || 'GET',
+      headers,
     };
 
     const proxyReq = requestModule.request(options, (proxyRes) => {
       const contentType = proxyRes.headers['content-type'] || '';
+      const statusCode = proxyRes.statusCode || 200;
       const isHtml = contentType.includes('text/html');
+      const isRedirect = statusCode >= 300 && statusCode < 400 && proxyRes.headers['location'];
+
+      // Handle redirects: rewrite Location header
+      if (isRedirect) {
+        const location = proxyRes.headers['location']!;
+        const rewrittenHeaders = this.stripHopByHopHeaders(proxyRes.headers);
+        delete rewrittenHeaders['x-frame-options'];
+        delete rewrittenHeaders['content-security-policy'];
+        rewrittenHeaders['location'] = this.rewriteLocationHeader(location as string, requestPath);
+        res.writeHead(statusCode, rewrittenHeaders);
+        proxyRes.pipe(res);
+        return;
+      }
 
       if (isHtml) {
-        // Buffer the HTML so we can inject our script and rewrite URLs
+        // Buffer the HTML so we can inject our script
         const chunks: Buffer[] = [];
         proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on('error', (err) => {
+          webLensLogger.error('Upstream response error', { path: requestPath, error: err.message });
+          if (!res.headersSent) {
+            this.sendError(res, 502, `Upstream response error: ${err.message}`);
+          } else {
+            res.end();
+          }
+        });
         proxyRes.on('end', () => {
           let html = Buffer.concat(chunks).toString('utf-8');
           html = this.injectScript(html);
-          html = this.rewriteUrls(html, targetUrl);
-          webLensLogger.info('Proxy HTML response', {
-            url: targetUrl.href,
-            statusCode: proxyRes.statusCode || 200,
-          });
+          webLensLogger.info('Proxy HTML response', { path: requestPath, statusCode });
 
-          // Forward headers but override content-length
-          const headers = this.stripHopByHopHeaders(proxyRes.headers);
-          delete headers['content-length'];
-          delete headers['content-encoding'];
-          // Remove security headers that would block our injection
-          delete headers['content-security-policy'];
-          delete headers['content-security-policy-report-only'];
-          delete headers['x-frame-options'];
+          const responseHeaders = this.stripHopByHopHeaders(proxyRes.headers);
+          delete responseHeaders['content-length'];
+          delete responseHeaders['content-encoding'];
+          delete responseHeaders['content-security-policy'];
+          delete responseHeaders['content-security-policy-report-only'];
+          delete responseHeaders['x-frame-options'];
 
-          res.writeHead(proxyRes.statusCode || 200, headers);
+          res.writeHead(statusCode, responseHeaders);
           res.end(html);
         });
       } else {
-        webLensLogger.info('Proxy asset response', {
-          url: targetUrl.href,
-          statusCode: proxyRes.statusCode || 200,
-          contentType,
-        });
-        // Non-HTML: stream through unchanged
-        const headers = this.stripHopByHopHeaders(proxyRes.headers);
-        // Remove frame-blocking headers for non-HTML too
-        delete headers['x-frame-options'];
-        delete headers['content-security-policy'];
-        res.writeHead(proxyRes.statusCode || 200, headers);
+        webLensLogger.info('Proxy asset response', { path: requestPath, statusCode, contentType });
+        const responseHeaders = this.stripHopByHopHeaders(proxyRes.headers);
+        delete responseHeaders['x-frame-options'];
+        delete responseHeaders['content-security-policy'];
+        res.writeHead(statusCode, responseHeaders);
         proxyRes.pipe(res);
       }
     });
 
     proxyReq.on('error', (err) => {
-      webLensLogger.error('Proxy request failed', { url: targetUrl.href, error: err.message });
-      this.sendError(res, 502, `Failed to fetch ${targetUrl.href}: ${err.message}`);
+      webLensLogger.error('Proxy request failed', { path: requestPath, error: err.message });
+      if (!res.headersSent) {
+        this.sendError(res, 502, `Failed to reach ${this.targetOrigin}${requestPath}: ${err.message}`);
+      }
     });
 
     proxyReq.setTimeout(10000, () => {
       proxyReq.destroy();
-      webLensLogger.error('Proxy request timed out', { url: targetUrl.href });
-      this.sendError(res, 504, `Request to ${targetUrl.href} timed out`);
+      webLensLogger.error('Proxy request timed out', { path: requestPath });
+      if (!res.headersSent) {
+        this.sendError(res, 504, `Request to ${this.targetOrigin}${requestPath} timed out`);
+      }
     });
 
-    proxyReq.end();
+    // Pipe request body for POST/PUT/PATCH
+    if (req.method && ['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
+      req.pipe(proxyReq);
+    } else {
+      proxyReq.end();
+    }
+  }
+
+  /**
+   * Prepare client request headers for forwarding to the upstream target.
+   * Rewrites Host, Referer, Origin; strips Accept-Encoding, Sec-Fetch-*, hop-by-hop.
+   */
+  private prepareRequestHeaders(clientHeaders: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
+    const headers: http.OutgoingHttpHeaders = {};
+    const proxyOrigin = `http://127.0.0.1:${this.port}`;
+
+    for (const [key, value] of Object.entries(clientHeaders)) {
+      if (value === undefined) continue;
+
+      const lower = key.toLowerCase();
+
+      // Skip hop-by-hop headers
+      if (['connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer',
+           'upgrade', 'proxy-authorization', 'proxy-authenticate'].includes(lower)) continue;
+
+      // Strip Accept-Encoding so upstream sends uncompressed (we modify HTML)
+      if (lower === 'accept-encoding') continue;
+
+      // Strip Sec-Fetch-* (misleading proxy-origin metadata)
+      if (lower.startsWith('sec-fetch-')) continue;
+
+      // Rewrite Host
+      if (lower === 'host') {
+        headers['host'] = this.targetHost;
+        continue;
+      }
+
+      // Rewrite Referer
+      if (lower === 'referer' && typeof value === 'string') {
+        headers['referer'] = value.replace(proxyOrigin, this.targetOrigin);
+        continue;
+      }
+
+      // Rewrite Origin
+      if (lower === 'origin' && typeof value === 'string') {
+        headers['origin'] = value.replace(proxyOrigin, this.targetOrigin);
+        continue;
+      }
+
+      headers[key] = value;
+    }
+
+    return headers;
+  }
+
+  /**
+   * Rewrite a redirect Location header.
+   * Same-origin absolute URLs are mapped back to proxy-space.
+   * Relative URLs are left as-is (browser resolves against proxy origin).
+   */
+  private rewriteLocationHeader(location: string, _requestPath: string): string {
+    // Absolute URL pointing to target origin → rewrite to proxy-space
+    if (location.startsWith(this.targetOrigin)) {
+      const path = location.slice(this.targetOrigin.length);
+      return path || '/';
+    }
+    // Relative or cross-origin — leave unchanged
+    return location;
   }
 
   /** Inject our inspect script before </body> (or at end of document). */
