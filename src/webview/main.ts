@@ -1,7 +1,7 @@
 import type { ExtensionMessage, ConsoleEntry } from '../types';
 import { createToolbar } from './toolbar';
 import { createInspectOverlay } from './inspect-overlay';
-import { createConsoleCapture } from './console-capture';
+import { createConsoleReceiver } from './console-capture';
 
 // VS Code webview API
 declare function acquireVsCodeApi(): {
@@ -11,6 +11,7 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+const targetOrigin = document.body.dataset.targetOrigin || '';
 
 function postMessage(msg: unknown) {
   vscode.postMessage(msg);
@@ -23,14 +24,16 @@ function postDiagnostic(level: 'info' | 'warn' | 'error', source: string, messag
   });
 }
 
-// ── Console capture state (per iframe) ──────────────────────
-let consoleCapture: ReturnType<typeof createConsoleCapture> | null = null;
+// ── Console receiver state ──────────────────────────────────
+const consoleReceiver = createConsoleReceiver((entry) => {
+  postDiagnostic(entry.level === 'log' ? 'info' : entry.level, 'page.console', entry.message);
+});
 
 // ── Initialize toolbar ──────────────────────────────────────
 const toolbarContainer = document.getElementById('toolbar')!;
 const toolbar = createToolbar(toolbarContainer, postMessage, {
   onLogsRequest() {
-    const entries: ConsoleEntry[] = consoleCapture?.getEntries() ?? [];
+    const entries: ConsoleEntry[] = consoleReceiver.getEntries();
     postMessage({ type: 'action:addLogs', payload: { logs: entries } });
   },
   onScreenshotRequest() {
@@ -68,7 +71,7 @@ toolbar.onStateChange((state) => {
 iframe.addEventListener('load', () => {
   // With the proxy approach, the iframe content is loaded through our proxy
   // so it appears same-origin. But we keep the try/catch for safety.
-  let url = '';
+  let url = iframe.src;
   let title = '';
   let canInject = true; // Proxy always injects
 
@@ -80,7 +83,6 @@ iframe.addEventListener('load', () => {
     canInject = false;
   }
 
-  // Extract the original URL from the proxy URL if present
   const originalUrl = extractOriginalUrl(url);
 
   if (originalUrl && originalUrl !== 'about:blank') {
@@ -89,21 +91,6 @@ iframe.addEventListener('load', () => {
       type: 'iframe:loaded',
       payload: { url: originalUrl, title, canInject },
     });
-  }
-
-  // Attach console capture on same-origin iframe load
-  if (canInject) {
-    try {
-      const iframeConsole = (iframe.contentWindow as any)?.console as Console | undefined;
-      if (iframeConsole) {
-        consoleCapture?.detach();
-        consoleCapture = createConsoleCapture(iframeConsole, (entry) => {
-          postDiagnostic(entry.level === 'log' ? 'info' : entry.level, 'page.console', entry.message);
-        });
-      }
-    } catch {
-      // Cross-origin — skip
-    }
   }
 
   postDiagnostic('info', 'webview', 'Iframe loaded', `url=${originalUrl || url}; canInject=${String(canInject)}`);
@@ -138,6 +125,24 @@ postMessage({ type: 'backend:request', payload: {} });
 window.addEventListener('message', async (event: MessageEvent) => {
   const message = event.data;
   if (!message || !message.type) return;
+
+  if (message.type === 'bc:navigated') {
+    const originalUrl = extractOriginalUrl(message.payload?.url || iframe.src);
+    let title = '';
+
+    try {
+      title = iframe.contentDocument?.title || '';
+    } catch {
+      // Ignore title lookup failures for cross-origin transitions.
+    }
+
+    toolbar.setUrl(originalUrl || message.payload?.url || iframe.src);
+    postMessage({
+      type: 'iframe:loaded',
+      payload: { url: originalUrl || message.payload?.url || iframe.src, title, canInject: true },
+    });
+    return;
+  }
 
   // Skip messages from the inject script (bc: prefix) — handled by inspect-overlay
   if (typeof message.type === 'string' && message.type.startsWith('bc:')) return;
@@ -196,6 +201,11 @@ function extractOriginalUrl(proxyUrl: string): string {
     const parsed = new URL(proxyUrl);
     const urlParam = parsed.searchParams.get('url');
     if (urlParam) return urlParam;
+
+    if (parsed.hostname === '127.0.0.1' && targetOrigin) {
+      const target = new URL(targetOrigin);
+      return `${target.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
   } catch {
     // Not a valid URL — return as-is
   }
