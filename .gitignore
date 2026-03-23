@@ -4,4 +4,10 @@ webview/main.js
 webview/main.js.map
 *.vsix
 .superpowers/
+.worktrees/
 docs/superpowers
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

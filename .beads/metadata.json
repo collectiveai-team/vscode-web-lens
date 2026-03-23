@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "vscode_browser_chat",
+  "project_id": "2d439fb6-7235-4d6b-9f75-44c6e44d3247"
+}
