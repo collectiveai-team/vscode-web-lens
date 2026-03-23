@@ -7,6 +7,24 @@
 
 import html2canvas from 'html2canvas';
 
+// Only initialize in the top-level proxied frame (direct child of the webview).
+// Nested iframes within the target app should NOT get instrumentation.
+if (window.__webLensInjected) {
+  // Already initialized in this frame - skip
+} else if (window.parent !== window && window.parent !== window.top) {
+  // This frame's parent is NOT the top frame (webview) - it's a nested iframe
+  // Skip initialization but mark as seen
+} else {
+  (window as any).__webLensInjected = true;
+  initWebLens();
+}
+
+declare global {
+  interface Window {
+    __webLensInjected?: boolean;
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────
 
 type Mode = 'inspect' | 'addElement' | 'off';
@@ -37,14 +55,16 @@ interface ElementInfo {
   computedStyles?: Record<string, string>;
 }
 
+const MAX_SCREENSHOT_SIZE = 2 * 1024 * 1024; // 2MB
+
+function initWebLens() {
+
 // ── State ──────────────────────────────────────────────────
 
 let currentMode: Mode = 'off';
 let highlightEl: HTMLElement | null = null;
 let tooltipEl: HTMLElement | null = null;
 let selectedElement: HTMLElement | null = null;
-
-const MAX_SCREENSHOT_SIZE = 2 * 1024 * 1024; // 2MB
 
 window.addEventListener('error', (event: ErrorEvent) => {
   postToParent({
@@ -476,6 +496,8 @@ async function captureAndSendScreenshot() {
   } catch {
     postToParent({ type: 'bc:screenshot', dataUrl: '' });
   }
+}
+
 }
 
 // ── Helpers ────────────────────────────────────────────────
