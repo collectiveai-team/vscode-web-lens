@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as https from 'https';
+import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
@@ -41,6 +42,10 @@ export class ProxyServer {
     return new Promise<number>((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);
+      });
+
+      this.server.on('upgrade', (req, clientSocket, head) => {
+        this.handleUpgrade(req, clientSocket as net.Socket, head);
       });
 
       this.server.listen(0, '127.0.0.1', () => {
@@ -235,6 +240,66 @@ export class ProxyServer {
     } else {
       proxyReq.end();
     }
+  }
+
+  /**
+   * Handle WebSocket upgrade requests by piping to the target.
+   * Supports HMR for Next.js, Vite, webpack-dev-server, etc.
+   */
+  private handleUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) {
+    const requestPath = req.url || '/';
+    webLensLogger.info('Proxy WebSocket upgrade', { path: requestPath });
+
+    const targetSocket = net.connect(this.targetPort, this.targetHostname, () => {
+      const headers = this.prepareRequestHeaders(req.headers);
+      headers['connection'] = 'Upgrade';
+      headers['upgrade'] = req.headers['upgrade'] || 'websocket';
+
+      let rawRequest = `${req.method} ${requestPath} HTTP/1.1\r\n`;
+      for (const [key, value] of Object.entries(headers)) {
+        if (value === undefined) continue;
+        if (Array.isArray(value)) {
+          for (const v of value) {
+            rawRequest += `${key}: ${v}\r\n`;
+          }
+        } else {
+          rawRequest += `${key}: ${value}\r\n`;
+        }
+      }
+      rawRequest += '\r\n';
+
+      targetSocket.write(rawRequest);
+      if (head.length > 0) {
+        targetSocket.write(head);
+      }
+
+      let headersSent = false;
+      targetSocket.on('data', (chunk) => {
+        if (!headersSent) {
+          clientSocket.write(chunk);
+          headersSent = true;
+        } else {
+          clientSocket.write(chunk);
+        }
+      });
+
+      clientSocket.on('data', (chunk) => {
+        targetSocket.write(chunk);
+      });
+    });
+
+    targetSocket.on('error', (err) => {
+      webLensLogger.error('Proxy WebSocket target error', { path: requestPath, error: err.message });
+      clientSocket.destroy();
+    });
+
+    clientSocket.on('error', (err) => {
+      webLensLogger.error('Proxy WebSocket client error', { path: requestPath, error: err.message });
+      targetSocket.destroy();
+    });
+
+    targetSocket.on('close', () => clientSocket.destroy());
+    clientSocket.on('close', () => targetSocket.destroy());
   }
 
   /**
