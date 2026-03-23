@@ -1,6 +1,7 @@
 import * as http from 'http';
 import * as https from 'https';
 import * as net from 'net';
+import * as tls from 'tls';
 import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
@@ -250,7 +251,18 @@ export class ProxyServer {
     const requestPath = req.url || '/';
     webLensLogger.info('Proxy WebSocket upgrade', { path: requestPath });
 
-    const targetSocket = net.connect(this.targetPort, this.targetHostname, () => {
+    const targetSocket = this.targetIsHttps
+      ? tls.connect({ host: this.targetHostname, port: this.targetPort, servername: this.targetHostname })
+      : net.connect(this.targetPort, this.targetHostname);
+    const readyEvent = this.targetIsHttps ? 'secureConnect' : 'connect';
+
+    targetSocket.setTimeout(10000, () => {
+      webLensLogger.error('Proxy WebSocket target timed out', { path: requestPath });
+      targetSocket.destroy();
+      clientSocket.destroy();
+    });
+
+    targetSocket.once(readyEvent, () => {
       const headers = this.prepareRequestHeaders(req.headers);
       headers['connection'] = 'Upgrade';
       headers['upgrade'] = req.headers['upgrade'] || 'websocket';
@@ -273,19 +285,8 @@ export class ProxyServer {
         targetSocket.write(head);
       }
 
-      let headersSent = false;
-      targetSocket.on('data', (chunk) => {
-        if (!headersSent) {
-          clientSocket.write(chunk);
-          headersSent = true;
-        } else {
-          clientSocket.write(chunk);
-        }
-      });
-
-      clientSocket.on('data', (chunk) => {
-        targetSocket.write(chunk);
-      });
+      targetSocket.pipe(clientSocket);
+      clientSocket.pipe(targetSocket);
     });
 
     targetSocket.on('error', (err) => {
