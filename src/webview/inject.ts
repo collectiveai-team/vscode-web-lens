@@ -132,6 +132,30 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
   };
 })();
 
+// SPA navigation detection
+// Wrap pushState/replaceState to notify the webview of SPA navigations.
+(function detectNavigation() {
+  const origPushState = history.pushState.bind(history);
+  const origReplaceState = history.replaceState.bind(history);
+
+  history.pushState = function (state: any, title: string, url?: string | URL | null) {
+    const result = origPushState(state, title, url);
+    postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+    return result;
+  };
+
+  history.replaceState = function (state: any, title: string, url?: string | URL | null) {
+    const result = origReplaceState(state, title, url);
+    postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+    return result;
+  };
+
+  // Also listen for popstate (back/forward within the iframe)
+  window.addEventListener('popstate', () => {
+    postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+  });
+})();
+
 postToParent({
   type: 'bc:diagnostic',
   payload: {
