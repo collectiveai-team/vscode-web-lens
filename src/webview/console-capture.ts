@@ -21,7 +21,7 @@ export function createConsoleReceiver(onEntry?: (entry: ConsoleEntry) => void) {
     const entry: ConsoleEntry = {
       level: data.payload.level === 'log' ? 'log' : data.payload.level === 'warn' ? 'warn' : 'error',
       message: data.payload.message || '',
-      timestamp: data.payload.timestamp || Date.now(),
+      timestamp: data.payload.timestamp ?? Date.now(),
     };
 
     buffer.push(entry);
@@ -56,4 +56,6 @@ export function createConsoleReceiver(onEntry?: (entry: ConsoleEntry) => void) {
 }
 
 /** @deprecated Use createConsoleReceiver instead. Temporary alias for backwards compatibility. */
-export const createConsoleCapture = createConsoleReceiver as any;
+export function createConsoleCapture(_legacyConsole?: unknown, onEntry?: (entry: ConsoleEntry) => void) {
+  return createConsoleReceiver(onEntry);
+}
