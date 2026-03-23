@@ -13,7 +13,7 @@ if (window.__webLensInjected) {
   // Already initialized in this frame - skip
 } else if (window.parent !== window && window.parent !== window.top) {
   // This frame's parent is NOT the top frame (webview) - it's a nested iframe
-  // Skip initialization but mark as seen
+  // Skip initialization in nested iframes
 } else {
   (window as any).__webLensInjected = true;
   initWebLens();
