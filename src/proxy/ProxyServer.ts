@@ -235,8 +235,9 @@ export class ProxyServer {
       }
     });
 
-    // Pipe request body for POST/PUT/PATCH
-    if (req.method && ['POST', 'PUT', 'PATCH'].includes(req.method.toUpperCase())) {
+    // Pipe request bodies for all methods except GET/HEAD.
+    const method = (req.method || 'GET').toUpperCase();
+    if (!['GET', 'HEAD'].includes(method)) {
       req.pipe(proxyReq);
     } else {
       proxyReq.end();

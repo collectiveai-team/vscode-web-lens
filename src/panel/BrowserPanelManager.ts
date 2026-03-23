@@ -165,7 +165,10 @@ export class BrowserPanelManager {
       ? `${this.proxyServer.getTargetOrigin()}${url}`
       : url;
     if (fullUrl !== this.state.url) {
-      this.navigate(fullUrl);
+      this.state.history = this.state.history.slice(0, this.state.historyIndex + 1);
+      this.state.history.push(fullUrl);
+      this.state.historyIndex = this.state.history.length - 1;
+      this.state.url = fullUrl;
     }
   }
 

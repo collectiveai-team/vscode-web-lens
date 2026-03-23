@@ -1,3 +1,4 @@
+import * as http from 'http';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../logging', () => ({
@@ -91,6 +92,59 @@ describe('ProxyServer', () => {
       expect(cleaned['sec-fetch-dest']).toBeUndefined();
       expect(cleaned['referer']).toBe('http://localhost:3000/page');
       expect(cleaned['origin']).toBe('http://localhost:3000');
+    });
+
+    it('forwards request bodies for DELETE requests', async () => {
+      let receivedBody = '';
+
+      const upstream = http.createServer((req, res) => {
+        req.on('data', (chunk) => {
+          receivedBody += chunk.toString();
+        });
+        req.on('end', () => {
+          res.writeHead(204);
+          res.end();
+        });
+      });
+
+      await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()));
+      const upstreamAddress = upstream.address();
+      if (!upstreamAddress || typeof upstreamAddress === 'string') {
+        throw new Error('Failed to get upstream server address');
+      }
+
+      const server = new ProxyServer('/fake-path', `http://127.0.0.1:${upstreamAddress.port}`);
+      const proxyPort = await server.start();
+
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port: proxyPort,
+            path: '/api/item/123',
+            method: 'DELETE',
+            headers: {
+              'content-type': 'application/json',
+              'content-length': Buffer.byteLength('{"hard":true}'),
+            },
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve());
+          }
+        );
+
+        req.on('error', reject);
+        req.write('{"hard":true}');
+        req.end();
+      });
+
+      expect(receivedBody).toBe('{"hard":true}');
+
+      await server.stop();
+      await new Promise<void>((resolve, reject) => {
+        upstream.close((err) => (err ? reject(err) : resolve()));
+      });
     });
   });
 

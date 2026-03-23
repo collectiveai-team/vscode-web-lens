@@ -127,10 +127,28 @@ describe('BrowserPanelManager', () => {
       payload: { url: '/docs?page=1#intro' },
     });
 
-    expect(postMessage).toHaveBeenCalledWith({
-      type: 'navigate:url',
-      payload: { url: 'http://127.0.0.1:9876/docs?page=1#intro' },
+    expect(postMessage).not.toHaveBeenCalled();
+    expect((manager as any).state.url).toBe('http://localhost:3000/docs?page=1#intro');
+  });
+
+  it('updates history for iframe-driven navigation without forcing a reload', async () => {
+    await manager.open();
+
+    const panel = mockedVscode.window.createWebviewPanel.mock.results[0]?.value;
+    const postMessage = panel?.webview.postMessage as ReturnType<typeof vi.fn>;
+    postMessage.mockClear();
+
+    mockState.lastMessageHandler?.({
+      type: 'iframe:loaded',
+      payload: { url: '/docs?page=1#intro' },
     });
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect((manager as any).state.url).toBe('http://localhost:3000/docs?page=1#intro');
+    expect((manager as any).state.history).toEqual([
+      'http://localhost:3000/docs?page=1#intro',
+    ]);
+    expect((manager as any).state.historyIndex).toBe(0);
   });
 
   it('reuses existing panel on second open call', async () => {
