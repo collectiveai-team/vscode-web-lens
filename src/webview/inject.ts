@@ -90,6 +90,48 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
   });
 });
 
+// Console capture
+// Monkey-patch console.log/warn/error to forward entries to the webview.
+// No local buffer needed - the receiver in console-capture.ts buffers entries.
+(function captureConsole() {
+  const originalLog = console.log.bind(console);
+  const originalWarn = console.warn.bind(console);
+  const originalError = console.error.bind(console);
+
+  function formatArgs(args: any[]): string {
+    return args
+      .map((arg) => {
+        if (typeof arg === 'string') return arg;
+        try {
+          return JSON.stringify(arg);
+        } catch {
+          return String(arg);
+        }
+      })
+      .join(' ');
+  }
+
+  function forward(level: 'log' | 'warn' | 'error', args: any[]) {
+    postToParent({
+      type: 'bc:console',
+      payload: { level, message: formatArgs(args), timestamp: Date.now() },
+    });
+  }
+
+  console.log = (...args: any[]) => {
+    forward('log', args);
+    originalLog(...args);
+  };
+  console.warn = (...args: any[]) => {
+    forward('warn', args);
+    originalWarn(...args);
+  };
+  console.error = (...args: any[]) => {
+    forward('error', args);
+    originalError(...args);
+  };
+})();
+
 postToParent({
   type: 'bc:diagnostic',
   payload: {
