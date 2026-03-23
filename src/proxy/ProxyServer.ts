@@ -299,10 +299,10 @@ export class ProxyServer {
     return location;
   }
 
-  /** Inject our inspect script before </body> (or at end of document). */
+  /** Inject our inspect script before the first <script> tag (or at end of document). */
   private injectScript(html: string): string {
-    const externalScriptTag = `<script src="http://127.0.0.1:${this.port}/__bc_inject.js"></script>`;
-    const bootstrapScriptTag = `<script>(function(){var post=function(level,message,details){try{window.parent.postMessage({type:'bc:diagnostic',payload:{source:'page.bootstrap',level:level,message:message,details:details}},'*');}catch{}};var format=function(value){if(value instanceof Error){return value.stack||value.message;}if(typeof value==='string'){return value;}try{return JSON.stringify(value);}catch{return String(value);}};var patchHistory=function(method){var orig=history[method];history[method]=function(state,title,url){try{return orig.call(this,state,title,url);}catch(e){if(e.name==='SecurityError'){post('warn','Suppressed cross-origin '+method,String(url));return;}throw e;}};};patchHistory('pushState');patchHistory('replaceState');window.addEventListener('error',function(event){post('error',event.message||'Unhandled page error',format(event.error||event.filename||window.location.href));});window.addEventListener('unhandledrejection',function(event){post('error','Unhandled promise rejection',format(event.reason));});post('info','Bootstrap attached',window.location.href);})();</script>`;
+    const externalScriptTag = `<script src="/__web_lens/inject.js"></script>`;
+    const bootstrapScriptTag = `<script>(function(){var post=function(level,message,details){try{window.parent.postMessage({type:'bc:diagnostic',payload:{source:'page.bootstrap',level:level,message:message,details:details}},'*');}catch{}};var format=function(value){if(value instanceof Error){return value.stack||value.message;}if(typeof value==='string'){return value;}try{return JSON.stringify(value);}catch{return String(value);}};window.addEventListener('error',function(event){post('error',event.message||'Unhandled page error',format(event.error||event.filename||window.location.href));});window.addEventListener('unhandledrejection',function(event){post('error','Unhandled promise rejection',format(event.reason));});post('info','Bootstrap attached',window.location.href);})();</script>`;
     const injection = `${bootstrapScriptTag}${externalScriptTag}`;
 
     const firstScriptIndex = html.search(/<script\b/i);
@@ -329,38 +329,6 @@ export class ProxyServer {
     }
 
     return html + injection;
-  }
-
-  /**
-   * Rewrite relative URLs in HTML to go through the proxy.
-   * This ensures navigation within the site continues through the proxy.
-   */
-  private rewriteUrls(html: string, baseUrl: URL): string {
-    const base = `${baseUrl.protocol}//${baseUrl.host}`;
-    const proxyBase = `http://127.0.0.1:${this.port}/?url=`;
-
-    // Rewrite href="/..." and src="/..." (absolute-path references)
-    html = html.replace(
-      /((?:href|src|action)\s*=\s*["'])(\/(?!\/)[^"']*)(["'])/gi,
-      (_match, prefix, urlPath, suffix) => {
-        return `${prefix}${proxyBase}${encodeURIComponent(base + urlPath)}${suffix}`;
-      }
-    );
-
-    // Inject <base> tag so the browser resolves relative URLs correctly.
-    // We use the original base URL so that relative paths like "style.css"
-    // resolve against the target origin. The proxy handles absolute-path
-    // rewrites above; truly relative paths (no leading /) are handled by <base>.
-    const baseTag = `<base href="${base}${baseUrl.pathname.replace(/\/[^/]*$/, '/')}">`;
-    const headIndex = html.indexOf('<head');
-    if (headIndex !== -1) {
-      const headCloseAngle = html.indexOf('>', headIndex);
-      if (headCloseAngle !== -1) {
-        html = html.slice(0, headCloseAngle + 1) + baseTag + html.slice(headCloseAngle + 1);
-      }
-    }
-
-    return html;
   }
 
   /**

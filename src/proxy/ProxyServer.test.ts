@@ -93,4 +93,79 @@ describe('ProxyServer', () => {
       expect(cleaned['origin']).toBe('http://localhost:3000');
     });
   });
+
+  describe('HTML injection', () => {
+    it('injects bootstrap and inject script before first app script', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <script src="/_next/static/chunks/main-app.js"></script>
+</head>
+<body><div id="app"></div></body>
+</html>`;
+
+      const injected = server.injectScript(html);
+
+      expect(injected).toContain("window.addEventListener('error'");
+      expect(injected).toContain('/__web_lens/inject.js');
+      expect(injected.indexOf("window.addEventListener('error'"))
+        .toBeLessThan(injected.indexOf('/_next/static/chunks/main-app.js'));
+    });
+
+    it('does NOT inject base tag or rewrite URLs', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const html = `<!DOCTYPE html>
+<html>
+<head></head>
+<body><a href="/about">About</a></body>
+</html>`;
+
+      const injected = server.injectScript(html);
+
+      expect(injected).not.toContain('<base');
+      expect(injected).toContain('href="/about"');
+    });
+
+    it('does NOT contain history pushState/replaceState monkey-patch', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const html = '<html><head></head><body></body></html>';
+      const injected = server.injectScript(html);
+
+      expect(injected).not.toContain('patchHistory');
+      expect(injected).not.toContain('SecurityError');
+    });
+  });
+
+  describe('redirect rewriting', () => {
+    it('rewrites same-origin absolute Location to proxy-space', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const result = server.rewriteLocationHeader('http://localhost:3000/login', '/');
+      expect(result).toBe('/login');
+    });
+
+    it('leaves relative Location unchanged', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const result = server.rewriteLocationHeader('/other', '/page');
+      expect(result).toBe('/other');
+    });
+
+    it('leaves cross-origin Location unchanged', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const result = server.rewriteLocationHeader('https://auth.example.com/login', '/');
+      expect(result).toBe('https://auth.example.com/login');
+    });
+  });
 });
