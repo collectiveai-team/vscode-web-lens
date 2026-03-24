@@ -92,7 +92,7 @@ describe('BrowserPanelManager', () => {
     await manager.open();
     expect(mockedVscode.window.createWebviewPanel).toHaveBeenCalledWith(
       'webLens',
-      'Web Lens',
+      'Web Lens Debug',
       1,
       expect.objectContaining({
         enableScripts: true,

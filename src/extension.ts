@@ -87,7 +87,12 @@ async function deliverContext(message: WebviewMessage, url: string) {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  webLensLogger.info('Extension activated');
+  const packageJson = context.extension.packageJSON as { displayName?: string; version?: string };
+  webLensLogger.info('Extension activated', {
+    displayName: packageJson.displayName || 'Web Lens Debug',
+    extensionId: context.extension.id,
+    version: packageJson.version || 'unknown',
+  });
   contextExtractor = new ContextExtractor();
   panelManager = new BrowserPanelManager(context.extensionUri);
 

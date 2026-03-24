@@ -5,18 +5,26 @@
  * Communicates with the parent webview via window.parent.postMessage().
  */
 
-import html2canvas from 'html2canvas';
+import { decideInjectInitialization } from './injectGuard';
+import { captureElementScreenshot as captureElementRegionScreenshot, captureScreenshot } from './screenshot';
 
-// Only initialize in the top-level proxied frame (direct child of the webview).
-// Nested iframes within the target app should NOT get instrumentation.
-if (window.__webLensInjected) {
-  // Already initialized in this frame - skip
-} else if (window.parent !== window && window.parent !== window.top) {
-  // This frame's parent is NOT the top frame (webview) - it's a nested iframe
-  // Skip initialization in nested iframes
-} else {
+const initializationDecision = decideInjectInitialization({
+  alreadyInjected: Boolean(window.__webLensInjected),
+  frameElementPresent: hasAccessibleFrameElement(),
+});
+
+if (initializationDecision.shouldInitialize) {
+  postStartupDiagnostic('info', 'Inject script initializing', window.location.href);
   (window as any).__webLensInjected = true;
   initWebLens();
+} else {
+  postStartupDiagnostic(
+    'info',
+    initializationDecision.reason === 'already-injected'
+      ? 'Inject script skipped - already initialized'
+      : 'Inject script skipped - nested frame',
+    window.location.href,
+  );
 }
 
 declare global {
@@ -195,6 +203,30 @@ function setMode(mode: Mode) {
   }
 }
 
+function hasAccessibleFrameElement(): boolean {
+  try {
+    return window.frameElement !== null;
+  } catch {
+    return false;
+  }
+}
+
+function postStartupDiagnostic(level: 'info' | 'warn' | 'error', message: string, details?: string) {
+  try {
+    window.parent.postMessage({
+      type: 'bc:diagnostic',
+      payload: {
+        source: 'page.startup',
+        level,
+        message,
+        details,
+      },
+    }, '*');
+  } catch {
+    // Ignore startup diagnostic failures.
+  }
+}
+
 function attach() {
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClick, true);
@@ -311,27 +343,7 @@ function handleInspectClick(el: HTMLElement) {
 // ── Add-element mode handler ───────────────────────────────
 
 function handleAddElementClick(el: HTMLElement) {
-  const info = extractElementInfo(el);
-
-  postToParent({
-    type: 'bc:addElementCaptured',
-    payload: {
-      html: truncate(info.html, 50000),
-      tag: info.tag,
-      classes: info.classes,
-      dimensions: info.dimensions,
-      accessibility: info.accessibility,
-      parentHtml: truncate(info.parentHtml, 50000),
-      ancestorPath: info.ancestorPath,
-      sourceLocation: info.sourceLocation,
-      attributes: info.attributes,
-      innerText: info.innerText,
-      computedStyles: info.computedStyles,
-    },
-  });
-
-  // Exit mode after capture
-  setMode('off');
+  void captureElementAndSend(el, 'bc:addElementCaptured', true);
 }
 
 // ── Tooltip ────────────────────────────────────────────────
@@ -381,23 +393,49 @@ function showTooltip(el: HTMLElement, info: ElementInfo) {
   if (sendBtn) {
     sendBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      postToParent({
-        type: 'bc:sendToChat',
-        payload: {
-          html: truncate(info.html, 50000),
-          tag: info.tag,
-          classes: info.classes,
-          dimensions: info.dimensions,
-          accessibility: info.accessibility,
-          parentHtml: truncate(info.parentHtml, 50000),
-          ancestorPath: info.ancestorPath,
-          sourceLocation: info.sourceLocation,
-          attributes: info.attributes,
-          innerText: info.innerText,
-          computedStyles: info.computedStyles,
-        },
-      });
+      void captureElementAndSend(el, 'bc:sendToChat', false);
     });
+  }
+}
+
+async function captureElementAndSend(
+  el: HTMLElement,
+  type: 'bc:sendToChat' | 'bc:addElementCaptured',
+  exitModeAfterCapture: boolean,
+) {
+  const info = extractElementInfo(el);
+  const screenshotDataUrl = await withOverlaysHidden(() => captureElementScreenshot(el));
+
+  postToParent({
+    type: 'bc:diagnostic',
+    payload: {
+      source: 'page.capture',
+      level: screenshotDataUrl ? 'info' : 'warn',
+      message: screenshotDataUrl ? 'Element screenshot captured' : 'Element screenshot capture failed',
+      details: `${info.tag} ${info.dimensions.width}x${info.dimensions.height}`,
+    },
+  });
+
+  postToParent({
+    type,
+    payload: {
+      html: truncate(info.html, 50000),
+      tag: info.tag,
+      classes: info.classes,
+      dimensions: info.dimensions,
+      accessibility: info.accessibility,
+      parentHtml: truncate(info.parentHtml, 50000),
+      ancestorPath: info.ancestorPath,
+      sourceLocation: info.sourceLocation,
+      screenshotDataUrl,
+      attributes: info.attributes,
+      innerText: info.innerText,
+      computedStyles: info.computedStyles,
+    },
+  });
+
+  if (exitModeAfterCapture) {
+    setMode('off');
   }
 }
 
@@ -536,31 +574,54 @@ function detectSourceLocation(el: HTMLElement): SourceLocation | undefined {
 
 async function captureAndSendScreenshot() {
   try {
-    const canvas = await html2canvas(document.body, {
-      useCORS: true,
-      logging: false,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      windowWidth: window.innerWidth,
-      windowHeight: window.innerHeight,
-    });
-
-    let dataUrl = canvas.toDataURL('image/png');
-
-    // Cap at 2MB — downscale if larger
-    if (dataUrl.length > MAX_SCREENSHOT_SIZE) {
-      const scale = Math.sqrt(MAX_SCREENSHOT_SIZE / dataUrl.length);
-      const scaledCanvas = document.createElement('canvas');
-      scaledCanvas.width = canvas.width * scale;
-      scaledCanvas.height = canvas.height * scale;
-      const ctx = scaledCanvas.getContext('2d')!;
-      ctx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-      dataUrl = scaledCanvas.toDataURL('image/png');
-    }
-
+    const dataUrl = await captureScreenshot(
+      document.body,
+      window.innerWidth,
+      window.innerHeight,
+      window.scrollX,
+      window.scrollY,
+    );
     postToParent({ type: 'bc:screenshot', dataUrl });
   } catch {
     postToParent({ type: 'bc:screenshot', dataUrl: '' });
+  }
+}
+
+async function captureElementScreenshot(el: HTMLElement): Promise<string> {
+  return captureElementRegionScreenshot(
+    document.body,
+    el,
+    window.innerWidth,
+    window.innerHeight,
+    window.scrollX,
+    window.scrollY,
+  );
+}
+
+async function withOverlaysHidden<T>(work: () => Promise<T>): Promise<T> {
+  const previousHighlightVisibility = highlightEl?.style.visibility;
+  const previousTooltipVisibility = tooltipEl?.style.visibility;
+
+  if (highlightEl) {
+    highlightEl.style.visibility = 'hidden';
+  }
+
+  if (tooltipEl) {
+    tooltipEl.style.visibility = 'hidden';
+  }
+
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  try {
+    return await work();
+  } finally {
+    if (highlightEl) {
+      highlightEl.style.visibility = previousHighlightVisibility || '';
+    }
+
+    if (tooltipEl) {
+      tooltipEl.style.visibility = previousTooltipVisibility || '';
+    }
   }
 }
 
@@ -594,5 +655,29 @@ function formatDiagnosticDetails(value: unknown): string {
     return JSON.stringify(value);
   } catch {
     return String(value);
+  }
+}
+
+function hasAccessibleFrameElement(): boolean {
+  try {
+    return window.frameElement !== null;
+  } catch {
+    return false;
+  }
+}
+
+function postStartupDiagnostic(level: 'info' | 'warn' | 'error', message: string, details?: string) {
+  try {
+    window.parent.postMessage({
+      type: 'bc:diagnostic',
+      payload: {
+        source: 'page.startup',
+        level,
+        message,
+        details,
+      },
+    }, '*');
+  } catch {
+    // Ignore startup diagnostic failures.
   }
 }

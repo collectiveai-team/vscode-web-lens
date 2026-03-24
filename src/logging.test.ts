@@ -28,7 +28,7 @@ describe('webLensLogger', () => {
     webLensLogger.info('second message');
 
     expect(createOutputChannel).toHaveBeenCalledTimes(1);
-    expect(createOutputChannel).toHaveBeenCalledWith('Web Lens');
+    expect(createOutputChannel).toHaveBeenCalledWith('Web Lens Debug');
     expect(appendLine).toHaveBeenCalledTimes(2);
   });
 

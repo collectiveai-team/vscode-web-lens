@@ -40,7 +40,7 @@ export class BrowserPanelManager {
 
     this.panel = vscode.window.createWebviewPanel(
       'webLens',
-      'Web Lens',
+      'Web Lens Debug',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -215,7 +215,7 @@ export class BrowserPanelManager {
   ">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
   <link href="${styleUri}" rel="stylesheet">
-  <title>Web Lens</title>
+  <title>Web Lens Debug</title>
 </head>
 <body data-theme="${dataTheme}" data-target-origin="${this.proxyServer.getTargetOrigin()}">
   <div id="backend-icons" hidden

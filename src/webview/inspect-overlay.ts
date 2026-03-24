@@ -49,8 +49,7 @@ export function createInspectOverlay(
         break;
 
       case 'bc:sendToChat':
-        // Request a screenshot from the iframe, then send with element info
-        requestScreenshot().then((screenshotDataUrl) => {
+        resolveElementScreenshot(data.payload.screenshotDataUrl).then((screenshotDataUrl) => {
           postMessage({
             type: 'inspect:sendToChat',
             payload: {
@@ -72,8 +71,7 @@ export function createInspectOverlay(
         break;
 
       case 'bc:addElementCaptured':
-        // Request a screenshot from the iframe, then send with element info
-        requestScreenshot().then((screenshotDataUrl) => {
+        resolveElementScreenshot(data.payload.screenshotDataUrl).then((screenshotDataUrl) => {
           postMessage({
             type: 'addElement:captured',
             payload: {
@@ -173,6 +171,30 @@ export function createInspectOverlay(
         resolve('');
       }
     });
+  }
+
+  function resolveElementScreenshot(embeddedScreenshotDataUrl?: string): Promise<string> {
+    if (embeddedScreenshotDataUrl) {
+      postMessage({
+        type: 'diagnostic:log',
+        payload: {
+          source: 'webview.overlay',
+          level: 'info',
+          message: 'Using embedded element screenshot',
+        },
+      });
+      return Promise.resolve(embeddedScreenshotDataUrl);
+    }
+
+    postMessage({
+      type: 'diagnostic:log',
+      payload: {
+        source: 'webview.overlay',
+        level: 'warn',
+        message: 'Falling back to generic screenshot capture',
+      },
+    });
+    return requestScreenshot();
   }
 
   return { setMode, cleanup, requestScreenshot };

@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 
 type LogLevel = 'info' | 'warn' | 'error';
+const OUTPUT_CHANNEL_NAME = 'Web Lens Debug';
 
 let outputChannel: vscode.OutputChannel | undefined;
 
 function getOutputChannel(): vscode.OutputChannel {
   if (!outputChannel) {
-    outputChannel = vscode.window.createOutputChannel('Web Lens');
+    outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
   }
 
   return outputChannel;

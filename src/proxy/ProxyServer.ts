@@ -372,34 +372,41 @@ export class ProxyServer {
 
   /** Inject our inspect script before the first <script> tag (or at end of document). */
   private injectScript(html: string): string {
-    const externalScriptTag = `<script src="/__web_lens/inject.js"></script>`;
-    const bootstrapScriptTag = `<script>(function(){var post=function(level,message,details){try{window.parent.postMessage({type:'bc:diagnostic',payload:{source:'page.bootstrap',level:level,message:message,details:details}},'*');}catch{}};var format=function(value){if(value instanceof Error){return value.stack||value.message;}if(typeof value==='string'){return value;}try{return JSON.stringify(value);}catch{return String(value);}};window.addEventListener('error',function(event){post('error',event.message||'Unhandled page error',format(event.error||event.filename||window.location.href));});window.addEventListener('unhandledrejection',function(event){post('error','Unhandled promise rejection',format(event.reason));});post('info','Bootstrap attached',window.location.href);})();</script>`;
-    const injection = `${bootstrapScriptTag}${externalScriptTag}`;
+    const sanitizedHtml = this.stripBlockingMetaTags(html);
+    const bootstrapScriptTag = `<script>(function(){var injectSrc='/__web_lens/inject.js';var post=function(level,message,details){try{window.parent.postMessage({type:'bc:diagnostic',payload:{source:'page.bootstrap',level:level,message:message,details:details}},'*');}catch{}};var format=function(value){if(value instanceof Error){return value.stack||value.message;}if(typeof value==='string'){return value;}try{return JSON.stringify(value);}catch{return String(value);}};var ensureInject=function(reason){if(window.__webLensInjected){post('info','Inject script already attached',reason);return;}if(document.querySelector('script[data-web-lens-loader="inject"]')){post('info','Inject script request already pending',reason);return;}try{var script=document.createElement('script');script.src=injectSrc;script.async=false;script.setAttribute('data-web-lens-loader','inject');script.addEventListener('load',function(){post('info','Inject script loaded',script.src);});script.addEventListener('error',function(){post('error','Inject script failed to load',script.src);});(document.head||document.documentElement).appendChild(script);post('info','Inject script fallback requested',reason);}catch(error){post('error','Inject script fallback failed',format(error));}};window.addEventListener('error',function(event){post('error',event.message||'Unhandled page error',format(event.error||event.filename||window.location.href));});window.addEventListener('unhandledrejection',function(event){post('error','Unhandled promise rejection',format(event.reason));});post('info','Bootstrap attached',window.location.href);ensureInject('bootstrap');})();</script>`;
+    const injection = bootstrapScriptTag;
 
-    const firstScriptIndex = html.search(/<script\b/i);
+    const firstScriptIndex = sanitizedHtml.search(/<script\b/i);
     if (firstScriptIndex !== -1) {
-      return html.slice(0, firstScriptIndex) + injection + html.slice(firstScriptIndex);
+      return sanitizedHtml.slice(0, firstScriptIndex) + injection + sanitizedHtml.slice(firstScriptIndex);
     }
 
-    const headOpenIndex = html.search(/<head[^>]*>/i);
+    const headOpenIndex = sanitizedHtml.search(/<head[^>]*>/i);
     if (headOpenIndex !== -1) {
-      const headCloseAngle = html.indexOf('>', headOpenIndex);
+      const headCloseAngle = sanitizedHtml.indexOf('>', headOpenIndex);
       if (headCloseAngle !== -1) {
-        return html.slice(0, headCloseAngle + 1) + injection + html.slice(headCloseAngle + 1);
+        return sanitizedHtml.slice(0, headCloseAngle + 1) + injection + sanitizedHtml.slice(headCloseAngle + 1);
       }
     }
 
-    const bodyCloseIndex = html.lastIndexOf('</body>');
+    const bodyCloseIndex = sanitizedHtml.lastIndexOf('</body>');
     if (bodyCloseIndex !== -1) {
-      return html.slice(0, bodyCloseIndex) + injection + html.slice(bodyCloseIndex);
+      return sanitizedHtml.slice(0, bodyCloseIndex) + injection + sanitizedHtml.slice(bodyCloseIndex);
     }
 
-    const htmlCloseIndex = html.lastIndexOf('</html>');
+    const htmlCloseIndex = sanitizedHtml.lastIndexOf('</html>');
     if (htmlCloseIndex !== -1) {
-      return html.slice(0, htmlCloseIndex) + injection + html.slice(htmlCloseIndex);
+      return sanitizedHtml.slice(0, htmlCloseIndex) + injection + sanitizedHtml.slice(htmlCloseIndex);
     }
 
-    return html + injection;
+    return sanitizedHtml + injection;
+  }
+
+  private stripBlockingMetaTags(html: string): string {
+    return html.replace(
+      /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']?(?:content-security-policy|content-security-policy-report-only|x-frame-options)["']?)[^>]*>\s*/gi,
+      ''
+    );
   }
 
   /**

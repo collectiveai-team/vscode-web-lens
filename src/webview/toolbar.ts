@@ -1,4 +1,5 @@
 import type { WebviewMessage } from '../types';
+import { createToolbarDiagnostic, getInstructionBannerHtml } from './toolbarDiagnostics';
 
 type PostMessage = (msg: WebviewMessage) => void;
 
@@ -104,7 +105,7 @@ export function createToolbar(
   const banner = document.createElement('div');
   banner.className = 'instruction-banner';
   banner.id = 'instruction-banner';
-  banner.innerHTML = `Click any element to add it to chat &nbsp; <kbd>ESC</kbd> to cancel`;
+  banner.innerHTML = getInstructionBannerHtml(state);
   container.parentElement?.insertBefore(banner, container.nextSibling);
 
   // ── Get references ─────────────────────────────────────────
@@ -150,14 +151,17 @@ export function createToolbar(
 
   // ── Navigation ─────────────────────────────────────────────
   btnBack.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Back pressed'));
     postMessage({ type: 'nav:back', payload: {} });
   });
 
   btnForward.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Forward pressed'));
     postMessage({ type: 'nav:forward', payload: {} });
   });
 
   btnReload.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Reload pressed'));
     postMessage({ type: 'nav:reload', payload: {} });
   });
 
@@ -165,6 +169,7 @@ export function createToolbar(
     if (e.key === 'Enter') {
       const url = urlBar.value.trim();
       if (url) {
+        postMessage(createToolbarDiagnostic('Navigate requested', url));
         postMessage({ type: 'navigate', payload: { url } });
       }
     }
@@ -176,6 +181,7 @@ export function createToolbar(
     if (state.inspectActive) {
       state.addElementActive = false;
     }
+    postMessage(createToolbarDiagnostic(`Inspect toggled ${state.inspectActive ? 'on' : 'off'}`));
     updateModeUI();
     stateChangeCallback?.({ ...state });
   });
@@ -185,22 +191,26 @@ export function createToolbar(
     if (state.addElementActive) {
       state.inspectActive = false;
     }
+    postMessage(createToolbarDiagnostic(`Add-element toggled ${state.addElementActive ? 'on' : 'off'}`));
     updateModeUI();
     stateChangeCallback?.({ ...state });
   });
 
   // ── Action buttons ────────────────────────────────────────
   btnAddLogs.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Add logs pressed'));
     callbacks?.onLogsRequest?.();
   });
 
   btnScreenshot.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Screenshot pressed'));
     callbacks?.onScreenshotRequest?.();
   });
 
   // ── Backend menu ──────────────────────────────────────────
   btnBackend.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation();
+    postMessage(createToolbarDiagnostic('Backend selector pressed'));
     // Close overflow menu if open
     overflowMenu.classList.remove('visible');
     // Toggle backend menu
@@ -216,6 +226,7 @@ export function createToolbar(
   // ── Overflow menu ─────────────────────────────────────────
   btnOverflow.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation();
+    postMessage(createToolbarDiagnostic('Overflow menu pressed'));
     backendMenu.classList.remove('visible');
     overflowMenu.classList.toggle('visible');
   });
@@ -226,6 +237,7 @@ export function createToolbar(
   });
 
   container.querySelector('#menu-settings')!.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Settings menu pressed'));
     postMessage({ type: 'menu:openSettings', payload: {} });
     overflowMenu.classList.remove('visible');
   });
@@ -239,11 +251,13 @@ export function createToolbar(
     } catch {
       html = '<!-- Cross-origin: cannot access page HTML -->';
     }
+    postMessage(createToolbarDiagnostic('Copy page HTML pressed'));
     postMessage({ type: 'menu:copyHtml', payload: { html } });
     overflowMenu.classList.remove('visible');
   });
 
   container.querySelector('#menu-clear')!.addEventListener('click', () => {
+    postMessage(createToolbarDiagnostic('Clear selection pressed'));
     postMessage({ type: 'menu:clearSelection', payload: {} });
     overflowMenu.classList.remove('visible');
   });
@@ -253,6 +267,7 @@ export function createToolbar(
     if (e.key === 'Escape') {
       state.inspectActive = false;
       state.addElementActive = false;
+      postMessage(createToolbarDiagnostic('Escape pressed - modes cleared'));
       updateModeUI();
       stateChangeCallback?.({ ...state });
     }
@@ -262,7 +277,8 @@ export function createToolbar(
   function updateModeUI() {
     elements.btnInspect.classList.toggle('active', state.inspectActive);
     elements.btnAddElement.classList.toggle('active', state.addElementActive);
-    elements.banner.classList.toggle('visible', state.addElementActive);
+    elements.banner.innerHTML = getInstructionBannerHtml(state);
+    elements.banner.classList.toggle('visible', state.inspectActive || state.addElementActive);
     container.classList.toggle('mode-active', state.inspectActive || state.addElementActive);
   }
 
@@ -322,6 +338,7 @@ export function createToolbar(
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         const backend = (item as HTMLElement).dataset.backend!;
+        postMessage(createToolbarDiagnostic('Backend selected', backend));
         callbacks?.onBackendSelect?.(backend);
         backendMenu.classList.remove('visible');
       });

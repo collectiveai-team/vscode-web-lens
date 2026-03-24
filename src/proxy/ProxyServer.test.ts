@@ -195,6 +195,36 @@ describe('ProxyServer', () => {
       expect(injected).not.toContain('patchHistory');
       expect(injected).not.toContain('SecurityError');
     });
+
+    it('removes meta CSP tags that would block the injected script', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'nonce-app'; style-src 'self'">
+  <script src="/app.js"></script>
+</head>
+<body></body>
+</html>`;
+
+      const injected = server.injectScript(html);
+
+      expect(injected).not.toContain('Content-Security-Policy');
+      expect(injected).toContain('/__web_lens/inject.js');
+    });
+
+    it('adds bootstrap diagnostics for inject fallback request and load events', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+
+      const injected = server.injectScript('<html><head></head><body></body></html>');
+
+      expect(injected).toContain('Inject script fallback requested');
+      expect(injected).toContain('Inject script loaded');
+      expect(injected).toContain('Inject script failed to load');
+    });
   });
 
   describe('redirect rewriting', () => {

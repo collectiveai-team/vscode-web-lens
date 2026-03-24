@@ -3,7 +3,10 @@
 
 # Include production files
 !package.json
+!LICENSE
 !out/extension.js
+!out/inject.js
 !webview/index.html
 !webview/main.js
 !webview/main.css
+!media/icons/**
