@@ -5,8 +5,7 @@ webview/main.js.map
 *.vsix
 .superpowers/
 .worktrees/
-docs/superpowers/*
-!docs/superpowers/specs/
+docs/superpowers
 
 # Beads / Dolt files (added by bd init)
 .dolt/
