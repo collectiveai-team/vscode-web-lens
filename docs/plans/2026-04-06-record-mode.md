@@ -766,15 +766,15 @@ Verify it's added to `package.json` devDependencies.
 
 - [ ] **Step 2: Add banner HTML helpers to `toolbarDiagnostics.ts`**
 
-Open `src/webview/toolbarDiagnostics.ts`. Add at the end of the file:
+Open `src/webview/toolbarDiagnostics.ts`. First, add the import at the top of the file:
 
 ```typescript
-export interface RecordOptions {
-  captureConsole: boolean;
-  captureScroll: boolean;
-  captureHover: boolean;
-}
+import type { RecordOptions } from '../types';
+```
 
+Then add at the end of the file:
+
+```typescript
 export function getRecordConfigBannerHtml(opts: RecordOptions): string {
   const checked = (val: boolean) => (val ? ' checked' : '');
   return `
@@ -1231,6 +1231,26 @@ After the `const vscode = acquireVsCodeApi();` line, add:
 let recordStartTime: number | null = null;
 let recordEventCount = 0;
 let recordTimerInterval: ReturnType<typeof setInterval> | null = null;
+let recordCaptureConsole = false; // mirrors the captureConsole flag for the active session
+```
+
+- [ ] **Step 3b: Intercept `bc:console` for recording**
+
+In the same `window.addEventListener('message', ...)` handler, add a case for `bc:console` **before** the existing `bc:` early-return filter (alongside the `bc:recordEvent` block added in Step 2):
+
+```typescript
+  if (message.type === 'bc:console' && recordStartTime !== null && recordCaptureConsole) {
+    postMessage({
+      type: 'recording:event',
+      payload: {
+        type: 'console',
+        timestamp: message.payload?.timestamp ?? Date.now(),
+        level: message.payload?.level ?? 'log',
+        message: message.payload?.message ?? '',
+      },
+    });
+    // Do NOT return here — let bc:console continue so the consoleReceiver still buffers it
+  }
 ```
 
 - [ ] **Step 4: Wire `onRecordStart` and `onRecordStop` toolbar callbacks**
@@ -1244,6 +1264,7 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
   onBackendRequest() { /* ... existing ... */ },
   onBackendSelect(backend: string) { /* ... existing ... */ },
   onRecordStart(opts) {
+    recordCaptureConsole = opts.captureConsole;
     overlay.startRecord(opts);
     postMessage({ type: 'recording:start', payload: opts });
   },
@@ -1262,6 +1283,7 @@ In the `switch (msg.type)` block in the extension-host message handler, add thre
     case 'recording:started':
       recordStartTime = Date.now();
       recordEventCount = 0;
+      // captureConsole flag is set by the toolbar's onRecordStart opts (stored locally)
       toolbar.setRecordActive(true);
       recordTimerInterval = setInterval(() => {
         if (recordStartTime !== null) {
@@ -1277,6 +1299,7 @@ In the `switch (msg.type)` block in the extension-host message handler, add thre
         recordTimerInterval = null;
       }
       recordStartTime = null;
+      recordCaptureConsole = false;
       toolbar.setRecordActive(false);
       showToast(`Recording saved: ${msg.payload.filePath}`, 'success');
       break;
