@@ -75,7 +75,7 @@ Record mode is mutually exclusive with `inspect` and `addElement` — enabling r
 | `src/webview/main.ts` | Forward `bc:recordEvent` to extension host; handle `recording:started` / `recording:stopped` messages from extension host |
 | `src/types.ts` | Add new message types (see below) |
 | `src/extension.ts` | Register `webLens.record` command; create/destroy `RecordingSession`; route recording messages |
-| `package.json` | Register `webLens.record` command; add `webLens.record.*` configuration contributions |
+| `package.json` | Register `webLens.record` command contribution point |
 
 ---
 
@@ -159,7 +159,7 @@ Example: `2026-04-06T10-00-00-localhost.json`
 
 ## Selector Strategy
 
-Implemented in `src/recording/selectorBuilder.ts` (and mirrored in inject.ts for browser context):
+The selector building logic lives **inline in `inject.ts`** (browser bundle context). Because inject.ts is compiled as a separate bundle from the extension host, it cannot import from `src/recording/`. The identical logic is also exported from `src/recording/selectorBuilder.ts` — its sole purpose is to make the logic unit-testable in Node.js without a real DOM (using jsdom stubs).
 
 **Priority order:**
 1. `data-testid` attribute → `[data-testid="value"]`
@@ -192,7 +192,7 @@ Also capture:  ☐ Console  ☐ Scroll  ☐ Hover    [⏺ Start]  [✕]
 - ✕ cancels and returns to idle
 
 ### State 3: Recording active
-Triggered by clicking Start in the config bar, or by `webLens.record` command (which skips config and uses last-used settings).
+Triggered by clicking Start in the config bar, or by `webLens.record` command (which skips config and uses last-used settings; on first use with no saved state, all optional captures default to unchecked/off).
 
 - ⏺ button becomes ⏹ with pulsing red background
 - Banner becomes recording status bar:
