@@ -63,10 +63,10 @@ web-lens:cookies:ws:file:///home/user/myapp:http://localhost:3000
 ### Scope Resolution
 
 When `webLens.storeCookies` is `true`:
-- If the setting is overridden at **workspace** level and a workspace folder is open → use `workspace` scope (per-project isolation)
+- If a workspace folder is open (i.e. `workspaceFolderUri` was provided to `CookieStore`) → use `workspace` scope (per-project isolation)
 - Otherwise → use `global` scope (shared across projects)
 
-This means two projects both with `storeCookies: true` in their `.vscode/settings.json` get independent cookie jars for the same origin.
+This means two projects both with `storeCookies: true` get independent cookie jars for the same origin, regardless of whether the setting was set at workspace or global level. The scope follows the workspace, not the config target.
 
 ### Integration Points
 
