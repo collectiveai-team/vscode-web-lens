@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com;
+    script-src 'self';
+    frame-src http: https:;
+    img-src https: data: http: blob:;
+    connect-src http: https:;
+  ">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+    rel="stylesheet"
+  >
+  <link href="/webview/main.css" rel="stylesheet">
+  <title>Web Lens Dev</title>
+</head>
+<body data-theme="dark" data-target-origin="{{TARGET_ORIGIN}}">
+  <div id="backend-icons" hidden
+    data-opencode-light="/media/icons/opencode-light.svg"
+    data-opencode-dark="/media/icons/opencode-dark.svg"
+    data-openchamber-light="/media/icons/openchamber-light.svg"
+    data-openchamber-dark="/media/icons/openchamber-dark.svg"
+    data-codex-light="/media/icons/codex-light.svg"
+    data-codex-dark="/media/icons/codex-dark.svg"
+    data-claudecode-light="/media/icons/claudecode-light.svg"
+    data-claudecode-dark="/media/icons/claudecode-dark.svg"
+  ></div>
+  <div id="toolbar"></div>
+  <div id="browser-frame">
+    <iframe
+      id="browser-iframe"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+    ></iframe>
+  </div>
+  <!-- Shim must load before main.js so acquireVsCodeApi() is defined -->
+  <script src="/vscode-shim.js"></script>
+  <script src="/webview/main.js"></script>
+</body>
+</html>
