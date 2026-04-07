@@ -13,5 +13,5 @@
     "sourceMap": true,
     "noEmit": true
   },
-  "include": ["src/webview/**/*.ts", "src/types.ts"]
+  "include": ["src/webview/**/*.ts", "src/types.ts", "src/standalone/vscode-shim.ts"]
 }
