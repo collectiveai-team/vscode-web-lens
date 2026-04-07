@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { WebviewMessage, ExtensionMessage } from '../types';
 import { ProxyServer } from '../proxy/ProxyServer';
 import { webLensLogger } from '../logging';
+import type { CookieStore } from '../cookies/CookieStore';
 
 interface PanelState {
   url: string;
@@ -16,7 +17,7 @@ export class BrowserPanelManager {
   private messageHandler: ((msg: WebviewMessage) => void) | undefined;
   private proxyServer: ProxyServer;
 
-  constructor(extensionUri: vscode.Uri) {
+  constructor(extensionUri: vscode.Uri, private readonly cookieStore?: CookieStore) {
     this.extensionUri = extensionUri;
     const config = vscode.workspace.getConfiguration('webLens');
     this.state = {
@@ -25,6 +26,9 @@ export class BrowserPanelManager {
       historyIndex: -1,
     };
     this.proxyServer = new ProxyServer(extensionUri.fsPath, this.state.url);
+    if (cookieStore) {
+      this.proxyServer.setCookieStore(cookieStore);
+    }
   }
 
   async open() {
@@ -70,6 +74,9 @@ export class BrowserPanelManager {
     // Navigate to default URL (through proxy)
     const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
     this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to send initial storage state', String(err));
+    });
   }
 
   onMessage(handler: (msg: WebviewMessage) => void) {
@@ -115,6 +122,50 @@ export class BrowserPanelManager {
           payload: { message: 'HTML copied to clipboard', toastType: 'success' },
         });
         break;
+      case 'storage:setEnabled': {
+        const target = vscode.workspace.workspaceFolders
+          ? vscode.ConfigurationTarget.Workspace
+          : vscode.ConfigurationTarget.Global;
+        Promise.resolve(
+          vscode.workspace
+            .getConfiguration('webLens')
+            .update('storeCookies', message.payload.enabled, target)
+        )
+          .then(() => this.sendStorageState())
+          .catch((err: unknown) => {
+            webLensLogger.warn('BrowserPanelManager: failed to update storeCookies', String(err));
+          });
+        break;
+      }
+      case 'storage:openView': {
+        if (!this.cookieStore) break;
+        const origin = this.proxyServer.getTargetOrigin();
+        this.cookieStore.listNames(origin).then((names) => {
+          this.postMessage({ type: 'storage:view', payload: { origin, names } });
+        }).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to list cookie names', String(err));
+        });
+        break;
+      }
+      case 'storage:clear': {
+        if (!this.cookieStore) break;
+        this.cookieStore.clear(message.payload.origin).then(() => this.sendStorageState()).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to clear cookies', String(err));
+        });
+        break;
+      }
+      case 'storage:deleteEntries': {
+        if (!this.cookieStore) break;
+        const { origin, names } = message.payload;
+        this.cookieStore.remove(origin, names).then(async () => {
+          const remaining = await this.cookieStore!.listNames(origin);
+          this.postMessage({ type: 'storage:view', payload: { origin, names: remaining } });
+          await this.sendStorageState();
+        }).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to delete cookie entries', String(err));
+        });
+        break;
+      }
       default:
         // Forward to external handler (ContextExtractor, adapters)
         this.messageHandler?.(message);
@@ -170,6 +221,29 @@ export class BrowserPanelManager {
       this.state.historyIndex = this.state.history.length - 1;
       this.state.url = fullUrl;
     }
+    // Send storage state so the webview toolbar can update
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to send storage state after load', String(err));
+    });
+  }
+
+  /** Send current storage state to the webview. Called on navigation and config changes. */
+  async sendStorageState(): Promise<void> {
+    if (!this.cookieStore) return;
+    const origin = this.proxyServer.getTargetOrigin();
+    const enabled = this.cookieStore.isEnabled();
+    const names = enabled ? await this.cookieStore.listNames(origin) : [];
+    this.postMessage({
+      type: 'storage:state',
+      payload: { origin, enabled, hasData: names.length > 0 },
+    });
+  }
+
+  /** Called by extension.ts when webLens.storeCookies config changes. */
+  refreshStorageState(): void {
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to refresh storage state', String(err));
+    });
   }
 
   private getHtmlForWebview(): string {

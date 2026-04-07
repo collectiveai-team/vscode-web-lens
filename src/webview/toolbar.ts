@@ -20,6 +20,7 @@ export interface ToolbarAPI {
   setInspectActive(active: boolean): void;
   setAddElementActive(active: boolean): void;
   setBackendState(active: string, available: Record<string, boolean>): void;
+  setStorageDataState(enabled: boolean, hasData: boolean): void;
   onStateChange(cb: (state: ToolbarState) => void): void;
 }
 
@@ -96,6 +97,18 @@ export function createToolbar(
             <span class="material-symbols-outlined">deselect</span>
             Clear Selection
           </button>
+          <div class="overflow-menu-separator"></div>
+          <button class="overflow-menu-item" id="menu-storage-toggle">
+            <span class="material-symbols-outlined">cookie</span>
+            <span id="menu-storage-label">Storage Data</span>
+            <span class="overflow-menu-check" id="menu-storage-check" style="display:none;">
+              <span class="material-symbols-outlined" style="font-size:16px;margin-left:auto;">check</span>
+            </span>
+          </button>
+          <button class="overflow-menu-item" id="menu-storage-view" style="display:none;">
+            <span class="material-symbols-outlined">manage_search</span>
+            View Storage Data
+          </button>
         </div>
       </div>
     </div>
@@ -119,6 +132,9 @@ export function createToolbar(
   const btnScreenshot = container.querySelector('#btn-screenshot') as HTMLButtonElement;
   const btnOverflow = container.querySelector('#btn-overflow') as HTMLButtonElement;
   const overflowMenu = container.querySelector('#overflow-menu') as HTMLElement;
+  const menuStorageToggle = container.querySelector('#menu-storage-toggle') as HTMLButtonElement;
+  const menuStorageCheck = container.querySelector('#menu-storage-check') as HTMLElement;
+  const menuStorageView = container.querySelector('#menu-storage-view') as HTMLButtonElement;
 
   const btnBackend = container.querySelector('#btn-backend') as HTMLButtonElement;
   const backendMenu = container.querySelector('#backend-menu') as HTMLElement;
@@ -262,6 +278,18 @@ export function createToolbar(
     overflowMenu.classList.remove('visible');
   });
 
+  menuStorageToggle.addEventListener('click', () => {
+    // Read current state from the check visibility and invert
+    const currentlyEnabled = menuStorageCheck.style.display !== 'none';
+    postMessage({ type: 'storage:setEnabled', payload: { enabled: !currentlyEnabled } });
+    overflowMenu.classList.remove('visible');
+  });
+
+  menuStorageView.addEventListener('click', () => {
+    postMessage({ type: 'storage:openView', payload: {} });
+    overflowMenu.classList.remove('visible');
+  });
+
   // ── ESC key handler ───────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -373,6 +401,11 @@ export function createToolbar(
       if (backendMenu.classList.contains('visible')) {
         renderBackendMenu();
       }
+    },
+
+    setStorageDataState(enabled: boolean, hasData: boolean) {
+      menuStorageCheck.style.display = enabled ? 'inline' : 'none';
+      menuStorageView.style.display = (enabled && hasData) ? '' : 'none';
     },
 
     onStateChange(cb: (state: ToolbarState) => void) {

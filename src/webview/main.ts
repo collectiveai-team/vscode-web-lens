@@ -187,6 +187,14 @@ window.addEventListener('message', async (event: MessageEvent) => {
     case 'toast':
       showToast(msg.payload.message, msg.payload.toastType);
       break;
+
+    case 'storage:state':
+      toolbar.setStorageDataState(msg.payload.enabled, msg.payload.hasData);
+      break;
+
+    case 'storage:view':
+      showStorageDataView(msg.payload.origin, msg.payload.names);
+      break;
   }
 });
 
@@ -235,4 +243,104 @@ function formatUnknown(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showStorageDataView(origin: string, names: string[]) {
+  // Remove any existing view
+  document.getElementById('storage-data-view')?.remove();
+
+  const view = document.createElement('div');
+  view.id = 'storage-data-view';
+  view.className = 'storage-data-view';
+
+  const rowsHtml = names.length === 0
+    ? `<tr><td colspan="3" class="storage-data-empty">No cookies stored for this origin</td></tr>`
+    : names.map(name => `
+        <tr>
+          <td><input type="checkbox" class="storage-row-check" data-name="${escapeHtml(name)}"></td>
+          <td class="storage-data-name">${escapeHtml(name)}</td>
+          <td class="storage-data-value">••••••••••</td>
+        </tr>
+      `).join('');
+
+  view.innerHTML = `
+    <div class="storage-data-header">
+      Storage Data — <span class="storage-data-origin">${escapeHtml(origin)}</span>
+    </div>
+    <div class="storage-data-scroll">
+      <table class="storage-data-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="storage-select-all" ${names.length === 0 ? 'disabled' : ''}></th>
+            <th>Name</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody id="storage-data-tbody">
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+    <div class="storage-data-actions">
+      <button id="storage-delete-selected" disabled>Delete Selected</button>
+      <button id="storage-clear-all" ${names.length === 0 ? 'disabled' : ''}>Clear All</button>
+      <button id="storage-close">Close</button>
+    </div>
+  `;
+
+  // Append over the browser-frame area
+  document.getElementById('browser-frame')?.appendChild(view);
+
+  // ── Wire interactions ─────────────────────────────────────
+
+  const selectAll = view.querySelector('#storage-select-all') as HTMLInputElement;
+  const deleteSelected = view.querySelector('#storage-delete-selected') as HTMLButtonElement;
+  const clearAll = view.querySelector('#storage-clear-all') as HTMLButtonElement;
+  const closeBtn = view.querySelector('#storage-close') as HTMLButtonElement;
+
+  function updateDeleteButton() {
+    const checked = view.querySelectorAll('.storage-row-check:checked');
+    deleteSelected.disabled = checked.length === 0;
+  }
+
+  selectAll.addEventListener('change', () => {
+    view.querySelectorAll<HTMLInputElement>('.storage-row-check').forEach((cb) => {
+      cb.checked = selectAll.checked;
+    });
+    updateDeleteButton();
+  });
+
+  view.querySelector('#storage-data-tbody')!.addEventListener('change', (e) => {
+    if ((e.target as HTMLElement).classList.contains('storage-row-check')) {
+      updateDeleteButton();
+      const allChecks = view.querySelectorAll<HTMLInputElement>('.storage-row-check');
+      const allChecked = Array.from(allChecks).every((cb) => cb.checked);
+      selectAll.checked = allChecked;
+    }
+  });
+
+  deleteSelected.addEventListener('click', () => {
+    const checked = view.querySelectorAll<HTMLInputElement>('.storage-row-check:checked');
+    const namesToDelete = Array.from(checked).map((cb) => cb.dataset.name!).filter(Boolean);
+    if (namesToDelete.length > 0) {
+      postMessage({ type: 'storage:deleteEntries', payload: { origin, names: namesToDelete } });
+    }
+  });
+
+  clearAll.addEventListener('click', () => {
+    postMessage({ type: 'storage:clear', payload: { origin } });
+    view.remove();
+  });
+
+  closeBtn.addEventListener('click', () => {
+    view.remove();
+  });
 }
