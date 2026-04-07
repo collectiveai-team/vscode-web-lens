@@ -90,6 +90,12 @@
           "type": "string",
           "default": ".tmp",
           "description": "Directory for context files (screenshots and element data). Relative paths resolve from workspace root. Absolute paths used as-is."
+        },
+        "webLens.storeCookies": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, cookies are captured from proxied sites and replayed across panel sessions. Stored securely in VS Code's encrypted secret storage.",
+          "scope": "resource"
         }
       }
     }
