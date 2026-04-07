@@ -48,7 +48,10 @@ export class ProxyServer {
       });
 
       this.server.on('upgrade', (req, clientSocket, head) => {
-        this.handleUpgrade(req, clientSocket as net.Socket, head);
+        this.handleUpgrade(req, clientSocket as net.Socket, head).catch((err) => {
+          webLensLogger.error('WebSocket upgrade unhandled error', { error: String(err) });
+          (clientSocket as net.Socket).destroy();
+        });
       });
 
       this.server.listen(0, '127.0.0.1', () => {
@@ -278,9 +281,15 @@ export class ProxyServer {
    * Handle WebSocket upgrade requests by piping to the target.
    * Supports HMR for Next.js, Vite, webpack-dev-server, etc.
    */
-  private handleUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) {
+  private async handleUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer): Promise<void> {
     const requestPath = req.url || '/';
     webLensLogger.info('Proxy WebSocket upgrade', { path: requestPath });
+
+    // Pre-fetch stored cookies for WebSocket upgrade
+    let storedCookies: Record<string, string> = {};
+    if (this.cookieStore?.isEnabled()) {
+      storedCookies = await this.cookieStore.get(this.targetOrigin);
+    }
 
     const targetSocket = this.targetIsHttps
       ? tls.connect({ host: this.targetHostname, port: this.targetPort, servername: this.targetHostname })
@@ -294,7 +303,7 @@ export class ProxyServer {
 
     targetSocket.once(readyEvent, () => {
       clearTimeout(connectTimeout);
-      const headers = this.prepareRequestHeaders(req.headers);
+      const headers = this.prepareRequestHeaders(req.headers, storedCookies);
       headers['connection'] = 'Upgrade';
       headers['upgrade'] = req.headers['upgrade'] || 'websocket';
 
