@@ -74,7 +74,9 @@ export class BrowserPanelManager {
     // Navigate to default URL (through proxy)
     const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
     this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
-    this.sendStorageState().catch(() => {/* silent */});
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to send initial storage state', String(err));
+    });
   }
 
   onMessage(handler: (msg: WebviewMessage) => void) {
@@ -127,7 +129,7 @@ export class BrowserPanelManager {
         Promise.resolve(
           vscode.workspace
             .getConfiguration('webLens')
-            .update('storeCookies', (message.payload as any).enabled, target)
+            .update('storeCookies', message.payload.enabled, target)
         )
           .then(() => this.sendStorageState())
           .catch((err: unknown) => {
@@ -140,22 +142,28 @@ export class BrowserPanelManager {
         const origin = this.proxyServer.getTargetOrigin();
         this.cookieStore.listNames(origin).then((names) => {
           this.postMessage({ type: 'storage:view', payload: { origin, names } });
-        }).catch(() => {/* silent */});
+        }).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to list cookie names', String(err));
+        });
         break;
       }
       case 'storage:clear': {
         if (!this.cookieStore) break;
-        this.cookieStore.clear((message.payload as any).origin).then(() => this.sendStorageState()).catch(() => {/* silent */});
+        this.cookieStore.clear(message.payload.origin).then(() => this.sendStorageState()).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to clear cookies', String(err));
+        });
         break;
       }
       case 'storage:deleteEntries': {
         if (!this.cookieStore) break;
-        const { origin, names } = message.payload as any;
+        const { origin, names } = message.payload;
         this.cookieStore.remove(origin, names).then(async () => {
           const remaining = await this.cookieStore!.listNames(origin);
           this.postMessage({ type: 'storage:view', payload: { origin, names: remaining } });
           await this.sendStorageState();
-        }).catch(() => {/* silent */});
+        }).catch((err) => {
+          webLensLogger.warn('BrowserPanelManager: failed to delete cookie entries', String(err));
+        });
         break;
       }
       default:
@@ -214,7 +222,9 @@ export class BrowserPanelManager {
       this.state.url = fullUrl;
     }
     // Send storage state so the webview toolbar can update
-    this.sendStorageState().catch(() => {/* silent */});
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to send storage state after load', String(err));
+    });
   }
 
   /** Send current storage state to the webview. Called on navigation and config changes. */

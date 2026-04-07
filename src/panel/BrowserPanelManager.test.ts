@@ -211,5 +211,45 @@ describe('BrowserPanelManager', () => {
         expect.objectContaining({ type: 'storage:view', payload: expect.objectContaining({ names: ['session', 'csrf'] }) })
       );
     });
+
+    it('handles storage:setEnabled by updating vscode config', async () => {
+      manager = new BrowserPanelManager(mockExtensionUri, mockCookieStore);
+      await manager.open();
+      const config = vi.mocked(vscode.workspace.getConfiguration)();
+
+      await mockState.lastMessageHandler?.({ type: 'storage:setEnabled', payload: { enabled: true } });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(config.update).toHaveBeenCalledWith('storeCookies', true, expect.any(Number));
+    });
+
+    it('handles storage:deleteEntries by removing entries and posting updated view', async () => {
+      mockCookieStore.listNames.mockResolvedValue(['csrf']);
+      manager = new BrowserPanelManager(mockExtensionUri, mockCookieStore);
+      await manager.open();
+      const panel = mockedVscode.window.createWebviewPanel.mock.results[0]?.value;
+      const postMessage = panel?.webview.postMessage as ReturnType<typeof vi.fn>;
+      postMessage.mockClear();
+
+      await mockState.lastMessageHandler?.({
+        type: 'storage:deleteEntries',
+        payload: { origin: 'http://localhost:3000', names: ['session'] },
+      });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockCookieStore.remove).toHaveBeenCalledWith('http://localhost:3000', ['session']);
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'storage:view', payload: expect.objectContaining({ names: ['csrf'] }) })
+      );
+    });
+
+    it('does nothing for storage messages when cookieStore is absent', async () => {
+      manager = new BrowserPanelManager(mockExtensionUri); // no cookieStore
+      await manager.open();
+      // Should not throw
+      await mockState.lastMessageHandler?.({ type: 'storage:clear', payload: { origin: 'http://localhost:3000' } });
+      await mockState.lastMessageHandler?.({ type: 'storage:openView', payload: {} });
+      await mockState.lastMessageHandler?.({ type: 'storage:deleteEntries', payload: { origin: 'http://localhost:3000', names: ['x'] } });
+    });
   });
 });
