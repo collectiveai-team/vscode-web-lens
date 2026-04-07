@@ -119,7 +119,7 @@ describe('CookieStore', () => {
       const store = new CookieStore(secrets);
       await store.merge('http://localhost:3000', { session: 'abc' });
       await store.remove('http://localhost:3000', ['session']);
-      expect(secrets.delete).toHaveBeenCalled();
+      expect(secrets.delete).toHaveBeenCalledWith('web-lens:cookies:global:http://localhost:3000');
     });
   });
 
