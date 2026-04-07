@@ -18,7 +18,11 @@ export type WebviewMessage =
   | { type: 'menu:openSettings'; payload: Record<string, never> }
   | { type: 'diagnostic:log'; payload: DiagnosticPayload }
   | { type: 'backend:request'; payload: Record<string, never> }
-  | { type: 'backend:select'; payload: { backend: string } };
+  | { type: 'backend:select'; payload: { backend: string } }
+  | { type: 'storage:setEnabled'; payload: { enabled: boolean } }
+  | { type: 'storage:openView'; payload: Record<string, never> }
+  | { type: 'storage:clear'; payload: { origin: string } }
+  | { type: 'storage:deleteEntries'; payload: { origin: string; names: string[] } };
 
 // Extension Host -> Webview
 export type ExtensionMessage =
@@ -29,7 +33,9 @@ export type ExtensionMessage =
   | { type: 'config:update'; payload: { backend: string } }
   | { type: 'toast'; payload: { message: string; toastType: 'success' | 'error' } }
   | { type: 'backend:state'; payload: { active: string; available: Record<string, boolean> } }
-  | { type: 'theme:update'; payload: { kind: 'dark' | 'light' } };
+  | { type: 'theme:update'; payload: { kind: 'dark' | 'light' } }
+  | { type: 'storage:state'; payload: { origin: string; enabled: boolean; hasData: boolean } }
+  | { type: 'storage:view'; payload: { origin: string; names: string[] } };
   // Note: spec uses `type` for toast payload, but we use `toastType` to avoid
   // collision with the message discriminant `type` field.
 
