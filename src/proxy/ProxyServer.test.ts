@@ -227,6 +227,49 @@ describe('ProxyServer', () => {
     });
   });
 
+  describe('cookie handling', () => {
+    it('parseSetCookieHeaders extracts name=value pairs and drops attributes', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      const result = server.parseSetCookieHeaders([
+        'session_id=abc123; HttpOnly; Path=/; Secure',
+        'csrf_token=xyz; SameSite=Strict',
+      ]);
+      expect(result).toEqual({ session_id: 'abc123', csrf_token: 'xyz' });
+    });
+
+    it('parseSetCookieHeaders ignores entries without =', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      const result = server.parseSetCookieHeaders(['bad-cookie', 'good=value']);
+      expect(result).toEqual({ good: 'value' });
+    });
+
+    it('parseSetCookieHeaders returns empty object for undefined input', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      expect(server.parseSetCookieHeaders(undefined)).toEqual({});
+    });
+
+    it('prepareRequestHeaders injects stored cookies not already in request', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+      const headers = { host: '127.0.0.1:9000', cookie: 'existing=val' };
+      const result = server.prepareRequestHeaders(headers, { stored: 'abc', existing: 'ignored' });
+      expect(result['cookie']).toContain('existing=val');
+      expect(result['cookie']).toContain('stored=abc');
+      // existing= from request must not be overwritten by stored
+      const cookieParts = (result['cookie'] as string).split('; ');
+      const existingEntry = cookieParts.find((p: string) => p.startsWith('existing='));
+      expect(existingEntry).toBe('existing=val');
+    });
+
+    it('prepareRequestHeaders sets Cookie header from stored cookies when no request cookie', () => {
+      const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
+      server.port = 9000;
+      const headers = { host: '127.0.0.1:9000' };
+      const result = server.prepareRequestHeaders(headers, { session: 'tok' });
+      expect(result['cookie']).toBe('session=tok');
+    });
+  });
+
   describe('redirect rewriting', () => {
     it('rewrites same-origin absolute Location to proxy-space', () => {
       const server = new ProxyServer('/fake-path', 'http://localhost:3000') as any;
