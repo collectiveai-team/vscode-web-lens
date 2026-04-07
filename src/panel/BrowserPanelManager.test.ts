@@ -20,6 +20,7 @@ vi.mock('../proxy/ProxyServer', () => ({
     }),
     getOriginalUrl: vi.fn((url: string) => url),
     getTargetOrigin: vi.fn().mockReturnValue('http://localhost:3000'),
+    setCookieStore: vi.fn(),
   })),
 }));
 
@@ -66,11 +67,15 @@ vi.mock('vscode', () => ({
           backend: 'clipboard',
           screenshotFormat: 'png',
           screenshotQuality: 0.9,
+          storeCookies: false,
         };
         return defaults[key];
       }),
+      update: vi.fn().mockResolvedValue(undefined),
     }),
+    workspaceFolders: [{ uri: { toString: () => 'file:///test' } }],
   },
+  ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
 }));
 
 import { BrowserPanelManager } from './BrowserPanelManager';
@@ -160,5 +165,51 @@ describe('BrowserPanelManager', () => {
   it('disposes panel correctly', async () => {
     await manager.open();
     manager.dispose();
+  });
+
+  describe('storage message handling', () => {
+    let mockCookieStore: any;
+
+    beforeEach(() => {
+      mockCookieStore = {
+        isEnabled: vi.fn().mockReturnValue(false),
+        get: vi.fn().mockResolvedValue({}),
+        merge: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
+        listNames: vi.fn().mockResolvedValue([]),
+      };
+    });
+
+    it('passes cookieStore to ProxyServer via setCookieStore', () => {
+      new BrowserPanelManager(mockExtensionUri, mockCookieStore);
+      const allResults = mockState.proxyServerMock.mock.results;
+      const proxyInstance = allResults[allResults.length - 1]?.value;
+      expect(proxyInstance.setCookieStore).toHaveBeenCalledWith(mockCookieStore);
+    });
+
+    it('handles storage:clear by calling cookieStore.clear', async () => {
+      manager = new BrowserPanelManager(mockExtensionUri, mockCookieStore);
+      await manager.open();
+      await mockState.lastMessageHandler?.({ type: 'storage:clear', payload: { origin: 'http://localhost:3000' } });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(mockCookieStore.clear).toHaveBeenCalledWith('http://localhost:3000');
+    });
+
+    it('handles storage:openView by posting storage:view with cookie names', async () => {
+      mockCookieStore.listNames.mockResolvedValue(['session', 'csrf']);
+      manager = new BrowserPanelManager(mockExtensionUri, mockCookieStore);
+      await manager.open();
+      const panel = mockedVscode.window.createWebviewPanel.mock.results[0]?.value;
+      const postMessage = panel?.webview.postMessage as ReturnType<typeof vi.fn>;
+      postMessage.mockClear();
+
+      await mockState.lastMessageHandler?.({ type: 'storage:openView', payload: {} });
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'storage:view', payload: expect.objectContaining({ names: ['session', 'csrf'] }) })
+      );
+    });
   });
 });
