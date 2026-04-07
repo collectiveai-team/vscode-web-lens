@@ -96,6 +96,7 @@
   },
   "scripts": {
     "build": "node esbuild.config.js",
+    "dev:standalone": "node esbuild.config.js && node out/standalone/server.js",
     "build:prod": "node esbuild.config.js --production",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "package": "npm run build:prod && vsce package",
