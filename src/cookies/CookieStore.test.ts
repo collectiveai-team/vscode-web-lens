@@ -23,6 +23,7 @@ function makeSecrets(): vscode.SecretStorage {
     get: vi.fn((key: string) => Promise.resolve(map.get(key))),
     store: vi.fn((key: string, value: string) => { map.set(key, value); return Promise.resolve(); }),
     delete: vi.fn((key: string) => { map.delete(key); return Promise.resolve(); }),
+    keys: vi.fn(() => Promise.resolve(Array.from(map.keys()))) as any,
     onDidChange: vi.fn() as any,
   };
 }
