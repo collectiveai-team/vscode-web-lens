@@ -45,9 +45,9 @@ export class CookieStore {
   /** Merge new cookies into existing storage for an origin. */
   async merge(origin: string, cookies: Record<string, string>): Promise<void> {
     try {
-      const existing = await this.get(origin);
-      const merged = { ...existing, ...cookies };
-      await this.secrets.store(this.buildKey(origin), JSON.stringify(merged));
+      const raw = await this.secrets.get(this.buildKey(origin));
+      const existing = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      await this.secrets.store(this.buildKey(origin), JSON.stringify({ ...existing, ...cookies }));
     } catch (err) {
       webLensLogger.warn('CookieStore: failed to save cookies', String(err));
     }
@@ -55,6 +55,7 @@ export class CookieStore {
 
   /** Remove specific cookie names for an origin. */
   async remove(origin: string, names: string[]): Promise<void> {
+    if (names.length === 0) return;
     try {
       const existing = await this.get(origin);
       for (const name of names) {
