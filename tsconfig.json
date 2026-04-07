@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "out", "webview", "src/webview"]
+  "exclude": ["node_modules", "out", "webview", "src/webview", "src/standalone/vscode-shim.ts"]
 }
