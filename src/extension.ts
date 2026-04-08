@@ -137,6 +137,8 @@ export function activate(context: vscode.ExtensionContext) {
       case 'backend:request': {
         getBackendState().then((state) => {
           panelManager?.postMessage({ type: 'backend:state', payload: state });
+        }).catch((err) => {
+          webLensLogger.error('backend:request state error', err);
         });
         break;
       }
@@ -144,11 +146,14 @@ export function activate(context: vscode.ExtensionContext) {
         const newBackend = message.payload.backend;
         if (adapters[newBackend]) {
           const config = vscode.workspace.getConfiguration('webLens');
-          config.update('backend', newBackend, vscode.ConfigurationTarget.Global).then(() => {
-            getBackendState().then((state) => {
+          Promise.resolve(config.update('backend', newBackend, vscode.ConfigurationTarget.Global))
+            .then(() => getBackendState())
+            .then((state) => {
               panelManager?.postMessage({ type: 'backend:state', payload: state });
+            })
+            .catch((err: unknown) => {
+              webLensLogger.error('backend:select error', err);
             });
-          });
         }
         break;
       }
@@ -167,6 +172,8 @@ export function activate(context: vscode.ExtensionContext) {
         // Also send backend:state for the toolbar selector
         getBackendState().then((state) => {
           panelManager?.postMessage({ type: 'backend:state', payload: state });
+        }).catch((err) => {
+          webLensLogger.error('config change backend state error', err);
         });
       }
       if (e.affectsConfiguration('webLens.storeCookies')) {

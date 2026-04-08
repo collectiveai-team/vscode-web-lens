@@ -167,6 +167,17 @@ describe('BrowserPanelManager', () => {
     manager.dispose();
   });
 
+  it('generates unique cryptographically-safe nonces', () => {
+    const nonce1 = (manager as any).getNonce() as string;
+    const nonce2 = (manager as any).getNonce() as string;
+    // Two calls must produce different values
+    expect(nonce1).not.toBe(nonce2);
+    // crypto.randomBytes(16).toString('base64url') produces exactly 22 characters
+    expect(nonce1).toHaveLength(22);
+    // base64url alphabet: A-Z a-z 0-9 - _
+    expect(nonce1).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
   describe('storage message handling', () => {
     let mockCookieStore: any;
 

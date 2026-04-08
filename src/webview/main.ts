@@ -201,15 +201,13 @@ window.addEventListener('message', async (event: MessageEvent) => {
 // ── Helpers ────────────────────────────────────────────────
 
 /**
- * Extract the original target URL from a proxy URL.
- * Proxy URLs look like: http://127.0.0.1:<port>/?url=<encodedTargetUrl>
+ * Reconstruct the original target URL from a proxy URL by replacing the
+ * 127.0.0.1:PORT origin with the configured target origin.
+ * Returns the input unchanged if it is not a proxy URL.
  */
 function extractOriginalUrl(proxyUrl: string): string {
   try {
     const parsed = new URL(proxyUrl);
-    const urlParam = parsed.searchParams.get('url');
-    if (urlParam) return urlParam;
-
     if (parsed.hostname === '127.0.0.1' && targetOrigin) {
       const target = new URL(targetOrigin);
       return `${target.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;

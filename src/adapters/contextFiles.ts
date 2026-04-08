@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { ContextBundle } from '../types';
+import { webLensLogger } from '../logging';
 
 export interface ContextDirInfo {
   dir: string;
@@ -213,7 +214,7 @@ export function cleanupOldFiles(dir: string, maxAgeMs: number = 60 * 60 * 1000):
     }
   } catch (err) {
     // Fire-and-forget: log but don't throw
-    console.error('cleanupOldFiles error:', err);
+    webLensLogger.warn('cleanupOldFiles error', err);
   }
 }
 
@@ -249,7 +250,7 @@ export function buildAtReferences(result: SaveResult): string {
  */
 export async function sendViaSelectionCommand(text: string, commandId: string): Promise<void> {
   const tmpDir = os.tmpdir();
-  const tmpFile = path.join(tmpDir, `.ref`);
+  const tmpFile = path.join(tmpDir, `.web-lens-ref-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
   fs.writeFileSync(tmpFile, text, 'utf8');
 
   try {
