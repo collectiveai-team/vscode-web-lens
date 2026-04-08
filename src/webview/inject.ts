@@ -203,30 +203,6 @@ function setMode(mode: Mode) {
   }
 }
 
-function hasAccessibleFrameElement(): boolean {
-  try {
-    return window.frameElement !== null;
-  } catch {
-    return false;
-  }
-}
-
-function postStartupDiagnostic(level: 'info' | 'warn' | 'error', message: string, details?: string) {
-  try {
-    window.parent.postMessage({
-      type: 'bc:diagnostic',
-      payload: {
-        source: 'page.startup',
-        level,
-        message,
-        details,
-      },
-    }, '*');
-  } catch {
-    // Ignore startup diagnostic failures.
-  }
-}
-
 function attach() {
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onClick, true);

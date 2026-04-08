@@ -10,6 +10,13 @@ vi.mock('vscode', () => ({
     }),
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
   },
+  window: {
+    createOutputChannel: vi.fn().mockReturnValue({
+      appendLine: vi.fn(),
+      show: vi.fn(),
+      dispose: vi.fn(),
+    }),
+  },
 }));
 
 import {

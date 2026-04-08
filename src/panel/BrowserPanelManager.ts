@@ -3,6 +3,7 @@ import { WebviewMessage, ExtensionMessage } from '../types';
 import { ProxyServer } from '../proxy/ProxyServer';
 import { webLensLogger } from '../logging';
 import type { CookieStore } from '../cookies/CookieStore';
+import * as crypto from 'crypto';
 
 interface PanelState {
   url: string;
@@ -312,11 +313,6 @@ export class BrowserPanelManager {
   }
 
   private getNonce(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < 32; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
+    return crypto.randomBytes(16).toString('base64url');
   }
 }
