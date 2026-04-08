@@ -155,11 +155,14 @@ window.addEventListener('message', async (event: MessageEvent) => {
   const msg = message as ExtensionMessage;
 
   switch (msg.type) {
-    case 'navigate:url':
+    case 'navigate:url': {
       iframe.src = msg.payload.url;
-      // Show the original URL in the toolbar, not the proxy URL
-      toolbar.setUrl(extractOriginalUrl(msg.payload.url) || msg.payload.url);
+      const originalUrl = extractOriginalUrl(msg.payload.url) || msg.payload.url;
+      toolbar.setUrl(originalUrl);
+      // Persist the original URL so WebviewPanelSerializer can restore it
+      vscode.setState({ url: originalUrl });
       break;
+    }
 
     case 'mode:inspect':
       toolbar.setInspectActive(msg.payload.enabled);

@@ -167,6 +167,37 @@ describe('BrowserPanelManager', () => {
     manager.dispose();
   });
 
+  it('restores from saved URL without creating a new panel', async () => {
+    const mockPanel = {
+      webview: {
+        html: '',
+        onDidReceiveMessage: vi.fn((handler: WebviewMessageHandler) => {
+          mockState.lastMessageHandler = handler;
+        }),
+        postMessage: vi.fn(),
+        asWebviewUri: vi.fn((uri: any) => uri),
+        cspSource: 'https://example.com',
+      },
+      onDidDispose: vi.fn(),
+      reveal: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    await manager.restore(mockPanel as any, 'http://localhost:3000/saved-path');
+
+    // Must NOT create a new panel
+    expect(mockedVscode.window.createWebviewPanel).not.toHaveBeenCalled();
+    // Must store the saved URL
+    expect((manager as any).state.url).toBe('http://localhost:3000/saved-path');
+    // Must navigate via proxy
+    expect(mockPanel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'navigate:url',
+        payload: { url: 'http://127.0.0.1:9876/saved-path' },
+      })
+    );
+  });
+
   it('generates unique cryptographically-safe nonces', () => {
     const nonce1 = (manager as any).getNonce() as string;
     const nonce2 = (manager as any).getNonce() as string;
