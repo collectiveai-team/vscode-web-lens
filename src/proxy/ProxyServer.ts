@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { URL } from 'url';
 import { webLensLogger } from '../logging';
+import type { CookieStore } from '../cookies/CookieStore';
 
 /**
  * HTTP proxy server that fetches target pages and injects our inspect script.
@@ -23,6 +24,7 @@ export class ProxyServer {
   private targetHostname: string; // e.g. "localhost"
   private targetPort: number;    // e.g. 3000
   private targetIsHttps: boolean;
+  private cookieStore: CookieStore | null = null;
 
   constructor(extensionPath: string, targetOrigin: string) {
     this.injectScriptPath = path.join(extensionPath, 'out', 'inject.js');
@@ -46,7 +48,10 @@ export class ProxyServer {
       });
 
       this.server.on('upgrade', (req, clientSocket, head) => {
-        this.handleUpgrade(req, clientSocket as net.Socket, head);
+        this.handleUpgrade(req, clientSocket as net.Socket, head).catch((err) => {
+          webLensLogger.error('WebSocket upgrade unhandled error', { error: String(err) });
+          (clientSocket as net.Socket).destroy();
+        });
       });
 
       this.server.listen(0, '127.0.0.1', () => {
@@ -110,6 +115,11 @@ export class ProxyServer {
     return this.targetOrigin;
   }
 
+  /** Attach a CookieStore for capture and replay. Call before start(). */
+  setCookieStore(store: CookieStore | null): void {
+    this.cookieStore = store;
+  }
+
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     // CORS headers on all responses
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -134,7 +144,13 @@ export class ProxyServer {
       return;
     }
 
-    this.proxyRequest(req, res);
+    this.proxyRequest(req, res).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      webLensLogger.error('Proxy request unhandled error', { path: req.url, error: msg });
+      if (!res.headersSent) {
+        this.sendError(res, 500, `Internal proxy error: ${msg}`);
+      }
+    });
   }
 
   private serveInjectScript(res: http.ServerResponse) {
@@ -150,12 +166,18 @@ export class ProxyServer {
     }
   }
 
-  private proxyRequest(req: http.IncomingMessage, res: http.ServerResponse) {
+  private async proxyRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const requestPath = req.url || '/';
     webLensLogger.info('Proxy request started', { method: req.method, path: requestPath });
 
+    // Pre-fetch stored cookies before creating the upstream request
+    let storedCookies: Record<string, string> = {};
+    if (this.cookieStore?.isEnabled()) {
+      storedCookies = await this.cookieStore.get(this.targetOrigin);
+    }
+
     const requestModule = this.targetIsHttps ? https : http;
-    const headers = this.prepareRequestHeaders(req.headers);
+    const headers = this.prepareRequestHeaders(req.headers, storedCookies);
 
     const options: http.RequestOptions = {
       hostname: this.targetHostname,
@@ -166,6 +188,17 @@ export class ProxyServer {
     };
 
     const proxyReq = requestModule.request(options, (proxyRes) => {
+      // Capture Set-Cookie headers from upstream response
+      const setCookieHeaders = proxyRes.headers['set-cookie'];
+      if (this.cookieStore?.isEnabled() && setCookieHeaders) {
+        const captured = this.parseSetCookieHeaders(setCookieHeaders);
+        if (Object.keys(captured).length > 0) {
+          this.cookieStore.merge(this.targetOrigin, captured).catch((err) => {
+            webLensLogger.warn('CookieStore: failed to save Set-Cookie', String(err));
+          });
+        }
+      }
+
       const contentType = proxyRes.headers['content-type'] || '';
       const statusCode = proxyRes.statusCode || 200;
       const isHtml = contentType.includes('text/html');
@@ -248,9 +281,15 @@ export class ProxyServer {
    * Handle WebSocket upgrade requests by piping to the target.
    * Supports HMR for Next.js, Vite, webpack-dev-server, etc.
    */
-  private handleUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) {
+  private async handleUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer): Promise<void> {
     const requestPath = req.url || '/';
     webLensLogger.info('Proxy WebSocket upgrade', { path: requestPath });
+
+    // Pre-fetch stored cookies for WebSocket upgrade
+    let storedCookies: Record<string, string> = {};
+    if (this.cookieStore?.isEnabled()) {
+      storedCookies = await this.cookieStore.get(this.targetOrigin);
+    }
 
     const targetSocket = this.targetIsHttps
       ? tls.connect({ host: this.targetHostname, port: this.targetPort, servername: this.targetHostname })
@@ -264,7 +303,7 @@ export class ProxyServer {
 
     targetSocket.once(readyEvent, () => {
       clearTimeout(connectTimeout);
-      const headers = this.prepareRequestHeaders(req.headers);
+      const headers = this.prepareRequestHeaders(req.headers, storedCookies);
       headers['connection'] = 'Upgrade';
       headers['upgrade'] = req.headers['upgrade'] || 'websocket';
 
@@ -312,7 +351,10 @@ export class ProxyServer {
    * Prepare client request headers for forwarding to the upstream target.
    * Rewrites Host, Referer, Origin; strips Accept-Encoding, Sec-Fetch-*, hop-by-hop.
    */
-  private prepareRequestHeaders(clientHeaders: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
+  private prepareRequestHeaders(
+    clientHeaders: http.IncomingHttpHeaders,
+    storedCookies: Record<string, string> = {},
+  ): http.OutgoingHttpHeaders {
     const headers: http.OutgoingHttpHeaders = {};
     const proxyOrigin = `http://127.0.0.1:${this.port}`;
 
@@ -350,6 +392,22 @@ export class ProxyServer {
       }
 
       headers[key] = value;
+    }
+
+    // Merge stored cookies: request cookies take precedence (they were set first in the loop).
+    // We only add stored cookies whose name isn't already present in the request.
+    if (Object.keys(storedCookies).length > 0) {
+      const existingCookieStr = headers['cookie'] as string | undefined;
+      const existingNames = existingCookieStr
+        ? new Set(existingCookieStr.split(';').map((p) => p.trim().split('=')[0].trim()))
+        : new Set<string>();
+      const additions = Object.entries(storedCookies)
+        .filter(([name]) => !existingNames.has(name))
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
+      if (additions) {
+        headers['cookie'] = existingCookieStr ? `${existingCookieStr}; ${additions}` : additions;
+      }
     }
 
     return headers;
@@ -430,6 +488,27 @@ export class ProxyServer {
       delete cleaned[h];
     }
     return cleaned;
+  }
+
+  /**
+   * Parse Set-Cookie header values into a name→value map.
+   * Drops all cookie attributes (HttpOnly, Secure, SameSite, expires, path).
+   */
+  private parseSetCookieHeaders(setCookieHeaders: string[] | undefined): Record<string, string> {
+    if (!setCookieHeaders) return {};
+    const result: Record<string, string> = {};
+    for (const header of setCookieHeaders) {
+      const [nameValue] = header.split(';');
+      const eqIdx = nameValue.indexOf('=');
+      if (eqIdx > 0) {
+        const name = nameValue.slice(0, eqIdx).trim();
+        const value = nameValue.slice(eqIdx + 1).trim();
+        if (name) {
+          result[name] = value;
+        }
+      }
+    }
+    return result;
   }
 
   private sendError(res: http.ServerResponse, statusCode: number, message: string) {

@@ -9,6 +9,7 @@ import { CodexAdapter } from './adapters/CodexAdapter';
 import { ClaudeCodeAdapter } from './adapters/ClaudeCodeAdapter';
 import type { WebviewMessage } from './types';
 import { webLensLogger } from './logging';
+import { CookieStore } from './cookies/CookieStore';
 
 let panelManager: BrowserPanelManager | undefined;
 let contextExtractor: ContextExtractor;
@@ -94,7 +95,9 @@ export function activate(context: vscode.ExtensionContext) {
     version: packageJson.version || 'unknown',
   });
   contextExtractor = new ContextExtractor();
-  panelManager = new BrowserPanelManager(context.extensionUri);
+  const workspaceFolderUri = vscode.workspace.workspaceFolders?.[0]?.uri.toString();
+  const cookieStore = new CookieStore(context.secrets, workspaceFolderUri);
+  panelManager = new BrowserPanelManager(context.extensionUri, cookieStore);
 
   // Handle messages from webview that need context delivery
   let currentUrl = 'http://localhost:3000';
@@ -165,6 +168,9 @@ export function activate(context: vscode.ExtensionContext) {
         getBackendState().then((state) => {
           panelManager?.postMessage({ type: 'backend:state', payload: state });
         });
+      }
+      if (e.affectsConfiguration('webLens.storeCookies')) {
+        panelManager?.refreshStorageState();
       }
     })
   );
