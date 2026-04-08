@@ -35,7 +35,7 @@ declare global {
 
 // ── Types ──────────────────────────────────────────────────
 
-type Mode = 'inspect' | 'addElement' | 'off';
+type Mode = 'inspect' | 'addElement' | 'off' | 'record';
 
 interface AccessibilityInfo {
   name?: string;
@@ -73,6 +73,11 @@ let currentMode: Mode = 'off';
 let highlightEl: HTMLElement | null = null;
 let tooltipEl: HTMLElement | null = null;
 let selectedElement: HTMLElement | null = null;
+let recordOpts: { captureConsole: boolean; captureScroll: boolean; captureHover: boolean } = {
+  captureConsole: false,
+  captureScroll: false,
+  captureHover: false,
+};
 
 window.addEventListener('error', (event: ErrorEvent) => {
   postToParent({
@@ -149,18 +154,41 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
   history.pushState = function (state: any, title: string, url?: string | URL | null) {
     const result = origPushState(state, title, url);
     postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+    if (currentMode === 'record') {
+      postToParent({
+        type: 'bc:recordEvent',
+        payload: { type: 'navigation', timestamp: Date.now(), url: window.location.href, trigger: 'pushState' },
+      });
+    }
     return result;
   };
 
   history.replaceState = function (state: any, title: string, url?: string | URL | null) {
     const result = origReplaceState(state, title, url);
     postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+    if (currentMode === 'record') {
+      postToParent({
+        type: 'bc:recordEvent',
+        payload: {
+          type: 'navigation',
+          timestamp: Date.now(),
+          url: window.location.href,
+          trigger: 'replaceState',
+        },
+      });
+    }
     return result;
   };
 
   // Also listen for popstate (back/forward within the iframe)
   window.addEventListener('popstate', () => {
     postToParent({ type: 'bc:navigated', payload: { url: window.location.href } });
+    if (currentMode === 'record') {
+      postToParent({
+        type: 'bc:recordEvent',
+        payload: { type: 'navigation', timestamp: Date.now(), url: window.location.href, trigger: 'popstate' },
+      });
+    }
   });
 })();
 
@@ -184,6 +212,19 @@ window.addEventListener('message', (event: MessageEvent) => {
     case 'bc:setMode':
       setMode(data.mode as Mode);
       break;
+    case 'bc:setRecord': {
+      const opts = data.opts as { captureConsole: boolean; captureScroll: boolean; captureHover: boolean };
+      if (currentMode === 'record') {
+        cleanupRecord();
+      } else {
+        cleanup();
+      }
+      currentMode = 'record';
+      selectedElement = null;
+      recordOpts = opts;
+      attachRecord();
+      break;
+    }
     case 'bc:captureScreenshot':
       captureAndSendScreenshot();
       break;
@@ -193,12 +234,15 @@ window.addEventListener('message', (event: MessageEvent) => {
 // ── Mode management ────────────────────────────────────────
 
 function setMode(mode: Mode) {
+  if (currentMode === 'record') {
+    cleanupRecord();
+  }
   currentMode = mode;
   selectedElement = null;
 
   cleanup();
 
-  if (mode !== 'off') {
+  if (mode !== 'off' && mode !== 'record') {
     attach();
   }
 }
@@ -233,6 +277,70 @@ function cleanup() {
   highlightEl = null;
   tooltipEl?.remove();
   tooltipEl = null;
+}
+
+function attachRecord() {
+  document.addEventListener('click', onRecordClick, true);
+  document.addEventListener('input', onRecordInput, true);
+  if (recordOpts.captureScroll) {
+    document.addEventListener('scroll', onRecordScroll, true);
+  }
+  if (recordOpts.captureHover) {
+    document.addEventListener('mouseover', onRecordHover, true);
+  }
+}
+
+function cleanupRecord() {
+  document.removeEventListener('click', onRecordClick, true);
+  document.removeEventListener('input', onRecordInput, true);
+  document.removeEventListener('scroll', onRecordScroll, true);
+  document.removeEventListener('mouseover', onRecordHover, true);
+}
+
+function onRecordClick(e: MouseEvent) {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  const { selector, selectorType } = buildRecordSelector(target);
+  postToParent({
+    type: 'bc:recordEvent',
+    payload: {
+      type: 'click',
+      timestamp: Date.now(),
+      selector,
+      selectorType,
+      text: (target.textContent || '').trim().slice(0, 200),
+      position: { x: Math.round(e.clientX), y: Math.round(e.clientY) },
+    },
+  });
+}
+
+function onRecordInput(e: Event) {
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  const { selector, selectorType } = buildRecordSelector(target);
+  const isPassword = target instanceof HTMLInputElement && target.type === 'password';
+  const value = isPassword ? '[redacted]' : target.value;
+  postToParent({
+    type: 'bc:recordEvent',
+    payload: { type: 'input', timestamp: Date.now(), selector, selectorType, value },
+  });
+}
+
+function onRecordScroll(_e: Event) {
+  postToParent({
+    type: 'bc:recordEvent',
+    payload: { type: 'scroll', timestamp: Date.now(), x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
+  });
+}
+
+function onRecordHover(e: MouseEvent) {
+  const target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  const { selector, selectorType } = buildRecordSelector(target);
+  postToParent({
+    type: 'bc:recordEvent',
+    payload: { type: 'hover', timestamp: Date.now(), selector, selectorType },
+  });
 }
 
 // ── Event handlers ─────────────────────────────────────────
@@ -285,7 +393,7 @@ function onClick(e: MouseEvent) {
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape' && currentMode !== 'record') {
     setMode('off');
     postToParent({ type: 'bc:modeExited' });
   }
@@ -604,6 +712,29 @@ async function withOverlaysHidden<T>(work: () => Promise<T>): Promise<T> {
 }
 
 // ── Helpers ────────────────────────────────────────────────
+
+function buildRecordSelector(el: HTMLElement): { selector: string; selectorType: string } {
+  const esc = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const escId = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);
+  const testid = el.getAttribute('data-testid');
+  if (testid) return { selector: `[data-testid="${esc(testid)}"]`, selectorType: 'data-testid' };
+  if (el.id) return { selector: `#${escId(el.id)}`, selectorType: 'id' };
+  const ariaLabel = el.getAttribute('aria-label');
+  if (ariaLabel) return { selector: `[aria-label="${esc(ariaLabel)}"]`, selectorType: 'aria-label' };
+  const name = el.getAttribute('name');
+  if (name) return { selector: `[name="${esc(name)}"]`, selectorType: 'name' };
+  const parts: string[] = [];
+  let current: HTMLElement | null = el;
+  let depth = 0;
+  while (current && current.tagName !== 'BODY' && current.tagName !== 'HTML' && depth < 4) {
+    let part = current.tagName.toLowerCase();
+    if (current.classList[0]) part += `.${current.classList[0]}`;
+    parts.unshift(part);
+    current = current.parentElement;
+    depth++;
+  }
+  return { selector: parts.join(' > ') || el.tagName.toLowerCase(), selectorType: 'css-path' };
+}
 
 function postToParent(msg: Record<string, unknown>) {
   window.parent.postMessage(msg, '*');
