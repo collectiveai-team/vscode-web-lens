@@ -8,7 +8,7 @@
  * - Handles screenshot request/response flow
  */
 
-import type { WebviewMessage } from '../types';
+import type { RecordOptions, WebviewMessage } from '../types';
 
 type PostMessage = (msg: WebviewMessage) => void;
 type Mode = 'inspect' | 'addElement' | 'off';
@@ -133,6 +133,14 @@ export function createInspectOverlay(
     }
   }
 
+  function startRecord(opts: RecordOptions) {
+    try {
+      iframe.contentWindow?.postMessage({ type: 'bc:setRecord', opts }, '*');
+    } catch {
+      // iframe not ready
+    }
+  }
+
   function cleanup() {
     setMode('off');
     if (pendingScreenshot) {
@@ -197,5 +205,5 @@ export function createInspectOverlay(
     return requestScreenshot();
   }
 
-  return { setMode, cleanup, requestScreenshot };
+  return { setMode, cleanup, requestScreenshot, startRecord };
 }

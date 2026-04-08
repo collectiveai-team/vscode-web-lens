@@ -1,4 +1,4 @@
-import type { ExtensionMessage, ConsoleEntry } from '../types';
+import type { ExtensionMessage, ConsoleEntry, RecordOptions } from '../types';
 import { createToolbar } from './toolbar';
 import { createInspectOverlay } from './inspect-overlay';
 import { createAnnotationOverlay } from './annotation-overlay';
@@ -12,6 +12,13 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+let recordStartTime: number | null = null;
+let recordEventCount = 0;
+let recordTimerInterval: ReturnType<typeof setInterval> | null = null;
+let recordCaptureConsole = false;
+let lastRecordOpts: RecordOptions = { captureConsole: false, captureScroll: false, captureHover: false };
+let recordActiveByHost = false;
+
 const targetOrigin = document.body.dataset.targetOrigin || '';
 
 function postMessage(msg: unknown) {
@@ -91,6 +98,16 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
     }
 
     deactivateAnnotateMode();
+  },
+  onRecordStart(opts) {
+    lastRecordOpts = { ...opts };
+    recordCaptureConsole = opts.captureConsole;
+    overlay.startRecord(opts);
+    postMessage({ type: 'recording:start', payload: opts });
+  },
+  onRecordStop() {
+    overlay.setMode('off');
+    postMessage({ type: 'recording:stop' });
   },
 });
 
@@ -192,7 +209,33 @@ window.addEventListener('message', async (event: MessageEvent) => {
       type: 'iframe:loaded',
       payload: { url: originalUrl || message.payload?.url || iframe.src, title, canInject: true },
     });
+
+    if (recordActiveByHost) {
+      overlay.startRecord(lastRecordOpts);
+    }
     return;
+  }
+
+  if (message.type === 'bc:recordEvent') {
+    recordEventCount++;
+    if (recordStartTime !== null) {
+      const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+      toolbar.updateRecordingStatus(recordEventCount, elapsed);
+    }
+    postMessage({ type: 'recording:event', payload: message.payload });
+    return;
+  }
+
+  if (message.type === 'bc:console' && recordStartTime !== null && recordCaptureConsole) {
+    postMessage({
+      type: 'recording:event',
+      payload: {
+        type: 'console',
+        timestamp: message.payload?.timestamp ?? Date.now(),
+        level: message.payload?.level ?? 'log',
+        message: message.payload?.message ?? '',
+      },
+    });
   }
 
   // Skip messages from the inject script (bc: prefix) — handled by inspect-overlay
@@ -238,6 +281,54 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
     case 'theme:update':
       document.body.dataset.theme = msg.payload.kind;
+      break;
+
+    case 'recording:started':
+      if (recordTimerInterval) {
+        clearInterval(recordTimerInterval);
+      }
+      recordStartTime = Date.now();
+      recordEventCount = 0;
+      recordActiveByHost = true;
+      toolbar.setRecordActive(true);
+      recordTimerInterval = setInterval(() => {
+        if (recordStartTime !== null) {
+          const elapsed = Math.floor((Date.now() - recordStartTime) / 1000);
+          toolbar.updateRecordingStatus(recordEventCount, elapsed);
+        }
+      }, 1000);
+      break;
+
+    case 'recording:stopped':
+      if (recordTimerInterval) {
+        clearInterval(recordTimerInterval);
+        recordTimerInterval = null;
+      }
+      recordStartTime = null;
+      recordActiveByHost = false;
+      recordCaptureConsole = false;
+      toolbar.setRecordActive(false);
+      showToast(`Recording saved: ${msg.payload.filePath}`, 'success');
+      break;
+
+    case 'recording:initOptions':
+      lastRecordOpts = { ...msg.payload };
+      recordCaptureConsole = msg.payload.captureConsole;
+      toolbar.setRecordOptions(msg.payload);
+      break;
+
+    case 'mode:record':
+      if (!msg.payload.enabled) {
+        if (recordActiveByHost) {
+          overlay.setMode('off');
+          postMessage({ type: 'recording:stop' });
+        }
+        break;
+      }
+
+      recordCaptureConsole = lastRecordOpts.captureConsole;
+      overlay.startRecord(lastRecordOpts);
+      postMessage({ type: 'recording:start', payload: lastRecordOpts });
       break;
 
     case 'toast':
