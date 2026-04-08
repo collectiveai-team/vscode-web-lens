@@ -19,12 +19,13 @@
 | Create | `src/recording/RecordingSession.ts` | Event buffer, session metadata, file I/O |
 | Create | `src/recording/RecordingSession.test.ts` | Unit tests for buffering, serialization, file writing |
 | Create | `src/webview/toolbar.test.ts` | DOM tests for record button states (jsdom) |
+| Modify | `src/webview/main.test.ts` | Tests for `mode:record`, option initialization, and resume after navigation |
 | Modify | `src/types.ts` | Add `RecordedEvent` type + recording message variants |
 | Modify | `src/webview/inject.ts` | Add `'record'` to Mode, `attachRecord`/`cleanupRecord`, inline selector builder |
 | Modify | `src/webview/toolbar.ts` | Record button + three-state banner (idle / config bar / status bar) |
 | Modify | `src/webview/toolbarDiagnostics.ts` | Add `getRecordConfigBannerHtml` and `getRecordActiveBannerHtml` |
 | Modify | `src/webview/inspect-overlay.ts` | Add `startRecord(opts)` to public API |
-| Modify | `src/webview/main.ts` | Intercept `bc:recordEvent`, handle `recording:started/stopped/initOptions`, wire toolbar callbacks |
+| Modify | `src/webview/main.ts` | Intercept `bc:recordEvent`, handle `recording:started/stopped/initOptions` and `mode:record`, wire toolbar callbacks, and re-attach record listeners after navigation |
 | Modify | `src/extension.ts` | Register `webLens.record` command, create/destroy `RecordingSession`, route messages, persist `workspaceState` |
 | Modify | `package.json` | Add `webLens.record` command contribution |
 
@@ -81,7 +82,7 @@ Add four new variants to the `ExtensionMessage` union (after `theme:update`):
 - [ ] **Step 4: Verify TypeScript compiles**
 
 ```bash
-npm run build 2>&1 | tail -10
+npm run build
 ```
 
 Expected: build completes with no TypeScript errors (only the existing output files are written; no new runtime changes yet).
@@ -141,6 +142,11 @@ describe('buildSelector', () => {
     expect(result).toEqual({ selector: '#my-btn', selectorType: 'id' });
   });
 
+  it('escapes selector fragments for special characters', () => {
+    const result = buildSelector(el('button', { attrs: { 'data-testid': 'save "draft"' } }));
+    expect(result).toEqual({ selector: '[data-testid="save \\"draft\\""]', selectorType: 'data-testid' });
+  });
+
   it('falls back to aria-label', () => {
     const result = buildSelector(el('button', { attrs: { 'aria-label': 'Close dialog' } }));
     expect(result).toEqual({ selector: '[aria-label="Close dialog"]', selectorType: 'aria-label' });
@@ -192,7 +198,7 @@ describe('buildSelector', () => {
 - [ ] **Step 2: Run tests — verify they fail**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|selectorBuilder"
+npm test -- --reporter=verbose src/recording/selectorBuilder.test.ts
 ```
 
 Expected: `FAIL src/recording/selectorBuilder.test.ts` — module not found.
@@ -223,17 +229,25 @@ export interface SelectorResult {
   selectorType: 'data-testid' | 'id' | 'aria-label' | 'name' | 'css-path';
 }
 
+function escapeSelectorFragment(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeIdSelector(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);
+}
+
 export function buildSelector(el: ElementLike): SelectorResult {
   const testid = el.getAttribute('data-testid');
-  if (testid) return { selector: `[data-testid="${testid}"]`, selectorType: 'data-testid' };
+  if (testid) return { selector: `[data-testid="${escapeSelectorFragment(testid)}"]`, selectorType: 'data-testid' };
 
-  if (el.id) return { selector: `#${el.id}`, selectorType: 'id' };
+  if (el.id) return { selector: `#${escapeIdSelector(el.id)}`, selectorType: 'id' };
 
   const ariaLabel = el.getAttribute('aria-label');
-  if (ariaLabel) return { selector: `[aria-label="${ariaLabel}"]`, selectorType: 'aria-label' };
+  if (ariaLabel) return { selector: `[aria-label="${escapeSelectorFragment(ariaLabel)}"]`, selectorType: 'aria-label' };
 
   const name = el.getAttribute('name');
-  if (name) return { selector: `[name="${name}"]`, selectorType: 'name' };
+  if (name) return { selector: `[name="${escapeSelectorFragment(name)}"]`, selectorType: 'name' };
 
   return { selector: buildCssPath(el), selectorType: 'css-path' };
 }
@@ -259,10 +273,10 @@ function buildCssPath(el: ElementLike, maxDepth = 4): string {
 - [ ] **Step 4: Run tests — verify they pass**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|selectorBuilder"
+npm test -- --reporter=verbose src/recording/selectorBuilder.test.ts
 ```
 
-Expected: `PASS src/recording/selectorBuilder.test.ts` with all 9 tests green.
+Expected: `PASS src/recording/selectorBuilder.test.ts` with all 10 tests green.
 
 - [ ] **Step 5: Commit**
 
@@ -420,7 +434,7 @@ import * as path from 'path';
 - [ ] **Step 2: Run tests — verify they fail**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|RecordingSession"
+npm test -- --reporter=verbose src/recording/RecordingSession.test.ts
 ```
 
 Expected: `FAIL src/recording/RecordingSession.test.ts` — module not found.
@@ -511,7 +525,7 @@ export class RecordingSession {
 - [ ] **Step 4: Run tests — verify they pass**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|RecordingSession"
+npm test -- --reporter=verbose src/recording/RecordingSession.test.ts
 ```
 
 Expected: `PASS src/recording/RecordingSession.test.ts` with all 11 tests green.
@@ -603,13 +617,15 @@ Add this function in the helpers section (before `postToParent`):
 
 ```typescript
 function buildRecordSelector(el: HTMLElement): { selector: string; selectorType: string } {
+  const esc = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const escId = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, (char) => `\\${char}`);
   const testid = el.getAttribute('data-testid');
-  if (testid) return { selector: `[data-testid="${testid}"]`, selectorType: 'data-testid' };
-  if (el.id) return { selector: `#${el.id}`, selectorType: 'id' };
+  if (testid) return { selector: `[data-testid="${esc(testid)}"]`, selectorType: 'data-testid' };
+  if (el.id) return { selector: `#${escId(el.id)}`, selectorType: 'id' };
   const ariaLabel = el.getAttribute('aria-label');
-  if (ariaLabel) return { selector: `[aria-label="${ariaLabel}"]`, selectorType: 'aria-label' };
+  if (ariaLabel) return { selector: `[aria-label="${esc(ariaLabel)}"]`, selectorType: 'aria-label' };
   const name = el.getAttribute('name');
-  if (name) return { selector: `[name="${name}"]`, selectorType: 'name' };
+  if (name) return { selector: `[name="${esc(name)}"]`, selectorType: 'name' };
   const parts: string[] = [];
   let current: HTMLElement | null = el;
   let depth = 0;
@@ -631,7 +647,7 @@ Add these functions after the existing `cleanup` function:
 ```typescript
 function attachRecord() {
   document.addEventListener('click', onRecordClick, true);
-  document.addEventListener('change', onRecordChange, true);
+  document.addEventListener('input', onRecordInput, true);
   if (recordOpts.captureScroll) {
     document.addEventListener('scroll', onRecordScroll, true);
   }
@@ -642,7 +658,7 @@ function attachRecord() {
 
 function cleanupRecord() {
   document.removeEventListener('click', onRecordClick, true);
-  document.removeEventListener('change', onRecordChange, true);
+  document.removeEventListener('input', onRecordInput, true);
   document.removeEventListener('scroll', onRecordScroll, true);
   document.removeEventListener('mouseover', onRecordHover, true);
 }
@@ -663,11 +679,12 @@ function onRecordClick(e: MouseEvent) {
   });
 }
 
-function onRecordChange(e: Event) {
-  const target = e.target as HTMLInputElement;
-  if (!target || !('value' in target)) return;
-  const { selector, selectorType } = buildRecordSelector(target as HTMLElement);
-  const value = (target as HTMLInputElement).type === 'password' ? '[redacted]' : (target as HTMLInputElement).value;
+function onRecordInput(e: Event) {
+  const target = e.target as HTMLInputElement | HTMLTextAreaElement;
+  if (!target || !(target instanceof HTMLElement) || !('value' in target)) return;
+  const { selector, selectorType } = buildRecordSelector(target);
+  const isPassword = target instanceof HTMLInputElement && target.type === 'password';
+  const value = isPassword ? '[redacted]' : target.value;
   postToParent({
     type: 'bc:recordEvent',
     payload: { type: 'input', timestamp: Date.now(), selector, selectorType, value },
@@ -735,7 +752,7 @@ function onKeyDown(e: KeyboardEvent) {
 - [ ] **Step 9: Build and verify no TypeScript errors**
 
 ```bash
-npm run build 2>&1 | tail -10
+npm run build
 ```
 
 Expected: no TypeScript errors.
@@ -919,7 +936,7 @@ describe('toolbar — record mode', () => {
 - [ ] **Step 4: Run tests — verify they fail**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|toolbar"
+npm test -- --reporter=verbose src/webview/toolbar.test.ts
 ```
 
 Expected: `FAIL src/webview/toolbar.test.ts` — `setRecordActive` not a function.
@@ -1147,7 +1164,7 @@ Replace the existing ESC handler:
 - [ ] **Step 6: Run tests — verify they pass**
 
 ```bash
-npm test -- --reporter=verbose 2>&1 | grep -E "FAIL|PASS|toolbar"
+npm test -- --reporter=verbose src/webview/toolbar.test.ts
 ```
 
 Expected: `PASS src/webview/toolbar.test.ts` with all 9 tests green.
@@ -1155,7 +1172,7 @@ Expected: `PASS src/webview/toolbar.test.ts` with all 9 tests green.
 - [ ] **Step 7: Full test suite — verify no regressions**
 
 ```bash
-npm test 2>&1 | tail -15
+npm test
 ```
 
 Expected: all existing tests still pass.
@@ -1174,6 +1191,7 @@ git commit -m "feat(toolbar): add record button with config bar and recording st
 **Files:**
 - Modify: `src/webview/inspect-overlay.ts`
 - Modify: `src/webview/main.ts`
+- Modify: `src/webview/main.test.ts`
 
 - [ ] **Step 1: Add `startRecord` to `inspect-overlay.ts`**
 
@@ -1202,6 +1220,10 @@ In `src/webview/main.ts`, in the `window.addEventListener('message', ...)` handl
 ```typescript
   if (message.type === 'bc:navigated') {
     // ... handle navigation
+    if (recordActiveByHost) {
+      // inject.ts is reloaded on navigation, so re-attach record listeners
+      overlay.startRecord(lastRecordOpts);
+    }
     return;
   }
 
@@ -1232,6 +1254,8 @@ let recordStartTime: number | null = null;
 let recordEventCount = 0;
 let recordTimerInterval: ReturnType<typeof setInterval> | null = null;
 let recordCaptureConsole = false; // mirrors the captureConsole flag for the active session
+let lastRecordOpts = { captureConsole: false, captureScroll: false, captureHover: false };
+let recordActiveByHost = false;
 ```
 
 - [ ] **Step 3b: Intercept `bc:console` for recording**
@@ -1264,6 +1288,7 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
   onBackendRequest() { /* ... existing ... */ },
   onBackendSelect(backend: string) { /* ... existing ... */ },
   onRecordStart(opts) {
+    lastRecordOpts = { ...opts };
     recordCaptureConsole = opts.captureConsole;
     overlay.startRecord(opts);
     postMessage({ type: 'recording:start', payload: opts });
@@ -1275,15 +1300,15 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
 });
 ```
 
-- [ ] **Step 5: Handle `recording:started`, `recording:stopped`, and `recording:initOptions` from extension host**
+- [ ] **Step 5: Handle `recording:started`, `recording:stopped`, `recording:initOptions`, and `mode:record` from extension host**
 
-In the `switch (msg.type)` block in the extension-host message handler, add three new cases:
+In the `switch (msg.type)` block in the extension-host message handler, add four new cases:
 
 ```typescript
     case 'recording:started':
       recordStartTime = Date.now();
       recordEventCount = 0;
-      // captureConsole flag is set by the toolbar's onRecordStart opts (stored locally)
+      recordActiveByHost = true;
       toolbar.setRecordActive(true);
       recordTimerInterval = setInterval(() => {
         if (recordStartTime !== null) {
@@ -1299,20 +1324,54 @@ In the `switch (msg.type)` block in the extension-host message handler, add thre
         recordTimerInterval = null;
       }
       recordStartTime = null;
+      recordActiveByHost = false;
       recordCaptureConsole = false;
       toolbar.setRecordActive(false);
       showToast(`Recording saved: ${msg.payload.filePath}`, 'success');
       break;
 
     case 'recording:initOptions':
+      lastRecordOpts = { ...msg.payload };
+      recordCaptureConsole = msg.payload.captureConsole;
       toolbar.setRecordOptions(msg.payload);
       break;
+
+    case 'mode:record':
+      if (!msg.payload.enabled) {
+        if (recordActiveByHost) {
+          overlay.setMode('off');
+          postMessage({ type: 'recording:stop' });
+        }
+        break;
+      }
+
+      recordCaptureConsole = lastRecordOpts.captureConsole;
+      overlay.startRecord(lastRecordOpts);
+      postMessage({ type: 'recording:start', payload: lastRecordOpts });
+      break;
 ```
+
+- [ ] **Step 5b: Extend `src/webview/main.test.ts` for command path + navigation resume**
+
+Add tests that verify:
+
+1. `recording:initOptions` updates toolbar options used by `mode:record`.
+2. `mode:record` with `enabled: true` calls `overlay.startRecord(lastRecordOpts)` and posts `recording:start`.
+3. While recording is active, `bc:navigated` triggers `overlay.startRecord(lastRecordOpts)` again.
+4. `mode:record` with `enabled: false` posts `recording:stop`.
+
+Run only this suite:
+
+```bash
+npm test -- --reporter=verbose src/webview/main.test.ts
+```
+
+Expected: `PASS src/webview/main.test.ts`.
 
 - [ ] **Step 6: Build and verify no TypeScript errors**
 
 ```bash
-npm run build 2>&1 | tail -10
+npm run build
 ```
 
 Expected: no errors.
@@ -1320,7 +1379,7 @@ Expected: no errors.
 - [ ] **Step 7: Run full test suite**
 
 ```bash
-npm test 2>&1 | tail -15
+npm test
 ```
 
 Expected: all tests pass.
@@ -1328,7 +1387,7 @@ Expected: all tests pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/webview/main.ts src/webview/inspect-overlay.ts
+git add src/webview/main.ts src/webview/inspect-overlay.ts src/webview/main.test.ts
 git commit -m "feat(webview): relay bc:recordEvent to extension host and handle recording lifecycle messages"
 ```
 
@@ -1351,7 +1410,7 @@ In `package.json`, add a new entry in the `contributes.commands` array (after `w
       }
 ```
 
-- [ ] **Step 2: Import `RecordingSession` and `RecordingSessionOptions` in `extension.ts`**
+- [ ] **Step 2: Import `RecordingSession` and `RecordOptions` in `extension.ts`**
 
 Add at the top of `src/extension.ts`:
 
@@ -1366,32 +1425,11 @@ After the existing `let panelManager: BrowserPanelManager | undefined;` line, ad
 
 ```typescript
 let activeRecording: RecordingSession | undefined;
-let extensionContext: vscode.ExtensionContext | undefined;
 ```
 
-- [ ] **Step 4: Store `context` reference and send `recording:initOptions` on panel open**
+- [ ] **Step 4: Send `recording:initOptions` on panel open**
 
-At the start of the `activate` function, save the context:
-
-```typescript
-  extensionContext = context;
-```
-
-After the existing `panelManager = new BrowserPanelManager(context.extensionUri);` line, add a panel-reveal listener to send saved options:
-
-```typescript
-  // Send saved record options when the panel becomes visible
-  panelManager.onPanelReady(() => {
-    const saved = context.workspaceState.get<RecordOptions>('webLens.recordOptions');
-    if (saved) {
-      panelManager?.postMessage({ type: 'recording:initOptions', payload: saved });
-    }
-  });
-```
-
-> **Note:** `BrowserPanelManager.onPanelReady` does not exist yet. Check whether `BrowserPanelManager` already exposes a panel-reveal or open callback. If not, send `recording:initOptions` inside the existing `webLens.open` command handler after `await panelManager!.open()`.
-
-The simplest approach: send it inside `webLens.open`:
+`BrowserPanelManager` does not expose an `onPanelReady` callback, so send saved options inside `webLens.open` after `await panelManager!.open()`:
 
 ```typescript
     vscode.commands.registerCommand('webLens.open', async () => {
@@ -1399,9 +1437,10 @@ The simplest approach: send it inside `webLens.open`:
       await panelManager!.open();
       // Restore last-used record options
       const saved = context.workspaceState.get<RecordOptions>('webLens.recordOptions');
-      if (saved) {
-        panelManager?.postMessage({ type: 'recording:initOptions', payload: saved });
-      }
+      panelManager?.postMessage({
+        type: 'recording:initOptions',
+        payload: saved ?? { captureConsole: false, captureScroll: false, captureHover: false },
+      });
     }),
 ```
 
@@ -1483,16 +1522,11 @@ In the `context.subscriptions.push(...)` block, add:
         // Toggle: start recording (use saved options, defaults if none)
         const saved = context.workspaceState.get<RecordOptions>('webLens.recordOptions')
           ?? { captureConsole: false, captureScroll: false, captureHover: false };
-        panelManager.postMessage({ type: 'mode:record', payload: { enabled: true } });
-        // Simulate recording:start flow by posting recording:start to self
-        // (The webview's toolbar Start logic routes back through recording:start message)
-        // Send initOptions so the webview knows which opts to use
         panelManager.postMessage({ type: 'recording:initOptions', payload: saved });
+        panelManager.postMessage({ type: 'mode:record', payload: { enabled: true } });
       }
     }),
 ```
-
-> **Note:** The `webLens.record` command skips the config bar and uses saved options. The full start flow (creating the session) is still triggered when the webview sends `recording:start` back. If simpler, the command can also directly call the same logic as handling `recording:start` in the extension host, bypassing the webview round-trip. Either approach is acceptable.
 
 - [ ] **Step 9: Dispose active recording on deactivate**
 
@@ -1512,7 +1546,7 @@ export function deactivate() {
 - [ ] **Step 10: Build — verify no TypeScript errors**
 
 ```bash
-npm run build 2>&1 | tail -10
+npm run build
 ```
 
 Expected: no errors.
@@ -1520,7 +1554,7 @@ Expected: no errors.
 - [ ] **Step 11: Run full test suite**
 
 ```bash
-npm test 2>&1 | tail -15
+npm test
 ```
 
 Expected: all tests pass.

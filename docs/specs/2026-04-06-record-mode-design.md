@@ -72,7 +72,7 @@ Record mode is mutually exclusive with `inspect` and `addElement` — enabling r
 |---|---|
 | `src/webview/inject.ts` | Add `record` to `Mode` type; implement `attachRecord()` / `cleanupRecord()` with click, input, navigation listeners; call `selectorBuilder` logic (duplicated in browser context); fire `bc:recordEvent` |
 | `src/webview/toolbar.ts` | Add record button to mode group; manage three states: idle / pre-recording config / recording active; extend `ToolbarState` and `ToolbarAPI` |
-| `src/webview/main.ts` | Forward `bc:recordEvent` to extension host; handle `recording:started` / `recording:stopped` messages from extension host |
+| `src/webview/main.ts` | Forward `bc:recordEvent` to extension host; handle `recording:started` / `recording:stopped` / `recording:initOptions` / `mode:record`; re-arm record listeners after iframe navigation while a session is active |
 | `src/types.ts` | Add new message types (see below) |
 | `src/extension.ts` | Register `webLens.record` command; create/destroy `RecordingSession`; route recording messages |
 | `package.json` | Register `webLens.record` command contribution point |
@@ -92,6 +92,8 @@ New additions to `src/types.ts`:
 // Extension Host → WebView
 { type: 'recording:started' }
 { type: 'recording:stopped'; payload: { filePath: string } }
+{ type: 'recording:initOptions'; payload: { captureConsole: boolean; captureScroll: boolean; captureHover: boolean } }
+{ type: 'mode:record'; payload: { enabled: boolean } }
 
 // inject → WebView (bc: internal channel)
 { type: 'bc:recordEvent'; payload: RecordedEvent }
@@ -170,6 +172,8 @@ The selector building logic lives **inline in `inject.ts`** (browser bundle cont
 
 The `selectorType` field records which strategy was used, so consumers can assess selector stability.
 
+All attribute and id selector fragments must be escaped before interpolation so recorded selectors remain valid when values contain quotes, spaces, or CSS metacharacters.
+
 ---
 
 ## Toolbar UI & States
@@ -192,7 +196,7 @@ Also capture:  ☐ Console  ☐ Scroll  ☐ Hover    [⏺ Start]  [✕]
 - ✕ cancels and returns to idle
 
 ### State 3: Recording active
-Triggered by clicking Start in the config bar, or by `webLens.record` command (which skips config and uses last-used settings; on first use with no saved state, all optional captures default to unchecked/off).
+Triggered by clicking Start in the config bar, or by `webLens.record` command. The command path uses saved options from `workspaceState` (or all unchecked defaults on first use), sends `recording:initOptions`, then sends `mode:record` to start immediately without opening the config bar.
 
 - ⏺ button becomes ⏹ with pulsing red background
 - Banner becomes recording status bar:
@@ -215,7 +219,7 @@ Clicking "Stop & Save" (or running `webLens.record` again):
 | Scenario | Behavior |
 |---|---|
 | `<input type="password">` | Value captured as `"[redacted]"`. Selector still recorded. |
-| Navigation during recording | inject.ts is re-injected by proxy on page load. Record mode re-attaches event listeners. Navigation event is recorded. Session continues uninterrupted. |
+| Navigation during recording | Navigation event is recorded first. When the iframe reload completes, `main.ts` replays `startRecord(lastRecordOpts)` so inject.ts re-attaches record listeners. Session continues uninterrupted. |
 | Panel closed mid-recording | `RecordingSession.dispose()` is called, auto-saves whatever events were collected. |
 | ESC key pressed | Does **not** stop recording. ESC only clears inspect/addElement modes. |
 | Zero events recorded | A session with 0 events is still saved (the file records start/stop metadata). |
@@ -232,6 +236,7 @@ Clicking "Stop & Save" (or running `webLens.record` again):
 | `src/recording/selectorBuilder.test.ts` | Pure function: data-testid priority, id fallback, aria-label fallback, CSS path fallback, password redaction |
 | `src/recording/RecordingSession.test.ts` | Event buffering, session metadata generation, JSON serialization, filename generation, auto-save on dispose |
 | `src/webview/toolbar.test.ts` (extended) | Record button toggle, config bar state transitions, recording active state, ESC does NOT clear record mode, Inspect/AddElement disabled while recording |
+| `src/webview/main.test.ts` (extended) | `mode:record` command path, `recording:initOptions` application, and re-arming record listeners after iframe navigation while active |
 
 **Patterns:** All tests follow the existing Vitest conventions: `vi.mock('vscode', ...)` for extension host code, `vi.stubGlobal('window', ...)` for webview code, no mocking for pure functions.
 
