@@ -31,10 +31,15 @@ const consoleReceiver = createConsoleReceiver((entry) => {
 
 // ── Initialize toolbar ──────────────────────────────────────
 const toolbarContainer = document.getElementById('toolbar')!;
+
+function captureAndSendLogs() {
+  const entries: ConsoleEntry[] = consoleReceiver.getEntries();
+  postMessage({ type: 'action:addLogs', payload: { logs: entries } });
+}
+
 const toolbar = createToolbar(toolbarContainer, postMessage, {
   onLogsRequest() {
-    const entries: ConsoleEntry[] = consoleReceiver.getEntries();
-    postMessage({ type: 'action:addLogs', payload: { logs: entries } });
+    captureAndSendLogs();
   },
   onScreenshotRequest() {
     // Request screenshot from the inject script inside the iframe
@@ -194,6 +199,10 @@ window.addEventListener('message', async (event: MessageEvent) => {
 
     case 'storage:view':
       showStorageDataView(msg.payload.origin, msg.payload.names);
+      break;
+
+    case 'addLogs:request':
+      captureAndSendLogs();
       break;
   }
 });
