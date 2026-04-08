@@ -35,7 +35,8 @@ export type ExtensionMessage =
   | { type: 'backend:state'; payload: { active: string; available: Record<string, boolean> } }
   | { type: 'theme:update'; payload: { kind: 'dark' | 'light' } }
   | { type: 'storage:state'; payload: { origin: string; enabled: boolean; hasData: boolean } }
-  | { type: 'storage:view'; payload: { origin: string; names: string[] } };
+  | { type: 'storage:view'; payload: { origin: string; names: string[] } }
+  | { type: 'addLogs:request'; payload: Record<string, never> };
   // Note: spec uses `type` for toast payload, but we use `toastType` to avoid
   // collision with the message discriminant `type` field.
 

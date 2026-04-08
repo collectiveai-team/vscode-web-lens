@@ -14,80 +14,80 @@ import { CookieStore } from './cookies/CookieStore';
 let panelManager: BrowserPanelManager | undefined;
 let contextExtractor: ContextExtractor;
 
-const adapters: Record<string, BackendAdapter> = {
-  clipboard: new ClipboardAdapter(),
-  opencode: new OpenCodeAdapter(),
-  openchamber: new OpenChamberAdapter(),
-  codex: new CodexAdapter(),
-  claudecode: new ClaudeCodeAdapter(),
-};
+export function activate(context: vscode.ExtensionContext) {
+  const adapters: Record<string, BackendAdapter> = {
+    clipboard: new ClipboardAdapter(),
+    opencode: new OpenCodeAdapter(),
+    openchamber: new OpenChamberAdapter(),
+    codex: new CodexAdapter(),
+    claudecode: new ClaudeCodeAdapter(),
+  };
 
-function getAdapter(): BackendAdapter {
-  const config = vscode.workspace.getConfiguration('webLens');
-  const backendName = config.get<string>('backend') || 'clipboard';
-  return adapters[backendName] || adapters.clipboard;
-}
-
-async function getBackendState(): Promise<{ active: string; available: Record<string, boolean> }> {
-  const config = vscode.workspace.getConfiguration('webLens');
-  const active = config.get<string>('backend') || 'clipboard';
-
-  const available: Record<string, boolean> = {};
-  const timeout = (ms: number) => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms));
-
-  await Promise.all(
-    Object.entries(adapters).map(async ([name, adapter]) => {
-      try {
-        available[name] = await Promise.race([adapter.isAvailable(), timeout(3000)]);
-      } catch {
-        available[name] = false;
-      }
-    })
-  );
-
-  return { active, available };
-}
-
-async function deliverContext(message: WebviewMessage, url: string) {
-  const adapter = getAdapter();
-  let result;
-
-  switch (message.type) {
-    case 'inspect:sendToChat':
-    case 'addElement:captured': {
-      const bundle = contextExtractor.fromCapturedElement(message.payload, url);
-      result = await adapter.deliver(bundle);
-      break;
-    }
-    case 'action:addLogs': {
-      const bundle = contextExtractor.fromLogs(message.payload.logs, url);
-      result = await adapter.deliver(bundle);
-      break;
-    }
-    case 'action:screenshot': {
-      const bundle = contextExtractor.fromScreenshot(
-        message.payload.dataUrl,
-        0,
-        0,
-        url
-      );
-      result = await adapter.deliver(bundle);
-      break;
-    }
-    default:
-      return;
+  function getAdapter(): BackendAdapter {
+    const config = vscode.workspace.getConfiguration('webLens');
+    const backendName = config.get<string>('backend') || 'clipboard';
+    return adapters[backendName] || adapters.clipboard;
   }
 
-  panelManager?.postMessage({
-    type: 'toast',
-    payload: {
-      message: result.message,
-      toastType: result.success ? 'success' : 'error',
-    },
-  });
-}
+  async function getBackendState(): Promise<{ active: string; available: Record<string, boolean> }> {
+    const config = vscode.workspace.getConfiguration('webLens');
+    const active = config.get<string>('backend') || 'clipboard';
 
-export function activate(context: vscode.ExtensionContext) {
+    const available: Record<string, boolean> = {};
+    const timeout = (ms: number) => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms));
+
+    await Promise.all(
+      Object.entries(adapters).map(async ([name, adapter]) => {
+        try {
+          available[name] = await Promise.race([adapter.isAvailable(), timeout(3000)]);
+        } catch {
+          available[name] = false;
+        }
+      })
+    );
+
+    return { active, available };
+  }
+
+  async function deliverContext(message: WebviewMessage, url: string) {
+    const adapter = getAdapter();
+    let result;
+
+    switch (message.type) {
+      case 'inspect:sendToChat':
+      case 'addElement:captured': {
+        const bundle = contextExtractor.fromCapturedElement(message.payload, url);
+        result = await adapter.deliver(bundle);
+        break;
+      }
+      case 'action:addLogs': {
+        const bundle = contextExtractor.fromLogs(message.payload.logs, url);
+        result = await adapter.deliver(bundle);
+        break;
+      }
+      case 'action:screenshot': {
+        const bundle = contextExtractor.fromScreenshot(
+          message.payload.dataUrl,
+          0,
+          0,
+          url
+        );
+        result = await adapter.deliver(bundle);
+        break;
+      }
+      default:
+        return;
+    }
+
+    panelManager?.postMessage({
+      type: 'toast',
+      payload: {
+        message: result.message,
+        toastType: result.success ? 'success' : 'error',
+      },
+    });
+  }
+
   const packageJson = context.extension.packageJSON as { displayName?: string; version?: string };
   webLensLogger.info('Extension activated', {
     displayName: packageJson.displayName || 'Web Lens Debug',
@@ -223,16 +223,7 @@ export function activate(context: vscode.ExtensionContext) {
       panelManager?.postMessage({ type: 'mode:addElement', payload: { enabled: true } });
     }),
     vscode.commands.registerCommand('webLens.addLogs', () => {
-      // The webview toolbar button handles log capture directly via the
-      // console capture buffer. This command palette entry triggers the
-      // same flow by simulating the toolbar button click.
-      // Note: A dedicated `addLogs:request` message could be added if
-      // command palette -> webview log capture is needed. For MVP, the
-      // toolbar button is the primary UX.
-      panelManager?.postMessage({
-        type: 'toast',
-        payload: { message: 'Use the toolbar button to capture logs', toastType: 'success' },
-      });
+      panelManager?.postMessage({ type: 'addLogs:request', payload: {} });
     }),
     vscode.commands.registerCommand('webLens.screenshot', () => {
       panelManager?.postMessage({ type: 'screenshot:request', payload: {} });
