@@ -1,5 +1,39 @@
 // Message protocol types — discriminated union
 
+// ── Recording types ────────────────────────────────────────
+
+export type RecordedEvent =
+  | {
+      type: 'click';
+      timestamp: number;
+      selector: string;
+      selectorType: string;
+      text: string;
+      position: { x: number; y: number };
+    }
+  | {
+      type: 'input';
+      timestamp: number;
+      selector: string;
+      selectorType: string;
+      value: string;
+    }
+  | {
+      type: 'navigation';
+      timestamp: number;
+      url: string;
+      trigger: 'pushState' | 'replaceState' | 'popstate' | 'load';
+    }
+  | { type: 'scroll'; timestamp: number; x: number; y: number }
+  | { type: 'hover'; timestamp: number; selector: string; selectorType: string }
+  | { type: 'console'; timestamp: number; level: string; message: string };
+
+export interface RecordOptions {
+  captureConsole: boolean;
+  captureScroll: boolean;
+  captureHover: boolean;
+}
+
 // Webview -> Extension Host
 export type WebviewMessage =
   | { type: 'navigate'; payload: { url: string } }
@@ -23,7 +57,10 @@ export type WebviewMessage =
   | { type: 'storage:setEnabled'; payload: { enabled: boolean } }
   | { type: 'storage:openView'; payload: Record<string, never> }
   | { type: 'storage:clear'; payload: { origin: string } }
-  | { type: 'storage:deleteEntries'; payload: { origin: string; names: string[] } };
+  | { type: 'storage:deleteEntries'; payload: { origin: string; names: string[] } }
+  | { type: 'recording:start'; payload: RecordOptions }
+  | { type: 'recording:stop' }
+  | { type: 'recording:event'; payload: RecordedEvent };
 
 // Extension Host -> Webview
 export type ExtensionMessage =
@@ -37,7 +74,11 @@ export type ExtensionMessage =
   | { type: 'theme:update'; payload: { kind: 'dark' | 'light' } }
   | { type: 'storage:state'; payload: { origin: string; enabled: boolean; hasData: boolean } }
   | { type: 'storage:view'; payload: { origin: string; names: string[] } }
-  | { type: 'addLogs:request'; payload: Record<string, never> };
+  | { type: 'addLogs:request'; payload: Record<string, never> }
+  | { type: 'recording:started' }
+  | { type: 'recording:stopped'; payload: { filePath: string } }
+  | { type: 'recording:initOptions'; payload: RecordOptions }
+  | { type: 'mode:record'; payload: { enabled: boolean } };
   // Note: spec uses `type` for toast payload, but we use `toastType` to avoid
   // collision with the message discriminant `type` field.
 
