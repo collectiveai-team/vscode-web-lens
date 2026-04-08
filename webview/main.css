@@ -16,6 +16,11 @@ html, body {
   font-size: 13px;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Toolbar ─────────────────────────────────────────────────── */
 
 #toolbar {
@@ -230,7 +235,8 @@ html, body {
 #browser-frame {
   position: relative;
   width: 100%;
-  height: calc(100% - 34px);
+  flex: 1;
+  min-height: 0;
 }
 
 #browser-iframe {
@@ -265,6 +271,82 @@ html, body {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 11px;
   background: var(--vscode-input-background, #3c3c3c);
+}
+
+/* ── Annotation strip ────────────────────────────────────────── */
+
+.annotation-strip {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b);
+  flex-wrap: wrap;
+}
+
+.annotation-strip.visible {
+  display: flex;
+}
+
+.annotation-strip-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.annotation-compose {
+  flex: 1;
+  min-width: 240px;
+}
+
+.annotation-control,
+.annotation-color {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground, #3c3c3c);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.annotation-control.active,
+.annotation-color.active {
+  border-color: var(--vscode-focusBorder, #007acc);
+  background: rgba(0, 122, 204, 0.15);
+}
+
+.annotation-color {
+  width: 28px;
+  padding: 0;
+}
+
+.annotation-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.annotation-prompt {
+  flex: 1;
+  min-width: 160px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 4px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+}
+
+.annotation-send {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
 }
 
 /* ── Toast notifications ─────────────────────────────────────── */

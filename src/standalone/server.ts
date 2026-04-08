@@ -22,6 +22,7 @@ import { spawn } from 'child_process';
 import { ProxyServer } from '../proxy/ProxyServer';
 import { ContextExtractor } from '../context/ContextExtractor';
 import type { WebviewMessage, ExtensionMessage } from '../types';
+import { handleStandaloneContextDelivery } from './contextDelivery';
 
 // -- Configuration -------------------------------------------------------------
 
@@ -279,29 +280,6 @@ async function main(): Promise<void> {
         break;
       }
 
-      // Context delivery - build ContextBundle, serialize to clipboard as JSON
-      case 'inspect:sendToChat':
-      case 'addElement:captured': {
-        const bundle = contextExtractor.fromCapturedElement(message.payload, currentUrl);
-        broadcast({ type: 'copyToClipboard', text: JSON.stringify(bundle, null, 2) });
-        broadcast({ type: 'toast', payload: { message: 'Context copied to clipboard', toastType: 'success' } });
-        break;
-      }
-
-      case 'action:addLogs': {
-        const bundle = contextExtractor.fromLogs(message.payload.logs, currentUrl);
-        broadcast({ type: 'copyToClipboard', text: JSON.stringify(bundle, null, 2) });
-        broadcast({ type: 'toast', payload: { message: 'Logs copied to clipboard', toastType: 'success' } });
-        break;
-      }
-
-      case 'action:screenshot': {
-        const bundle = contextExtractor.fromScreenshot(message.payload.dataUrl, 0, 0, currentUrl);
-        broadcast({ type: 'copyToClipboard', text: JSON.stringify(bundle, null, 2) });
-        broadcast({ type: 'toast', payload: { message: 'Screenshot copied to clipboard', toastType: 'success' } });
-        break;
-      }
-
       case 'backend:request': {
         broadcast(STANDALONE_BACKEND_STATE);
         break;
@@ -317,6 +295,14 @@ async function main(): Promise<void> {
         const { level, source, message: msg } = message.payload;
         const logFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
         logFn(`[${source}] ${msg}`);
+        break;
+      }
+      case 'inspect:sendToChat':
+      case 'annotate:sendToChat':
+      case 'addElement:captured':
+      case 'action:addLogs':
+      case 'action:screenshot': {
+        handleStandaloneContextDelivery(message, { contextExtractor, currentUrl, broadcast });
         break;
       }
     }

@@ -1,6 +1,7 @@
 import type { ExtensionMessage, ConsoleEntry } from '../types';
 import { createToolbar } from './toolbar';
 import { createInspectOverlay } from './inspect-overlay';
+import { createAnnotationOverlay } from './annotation-overlay';
 import { createConsoleReceiver } from './console-capture';
 
 // VS Code webview API
@@ -37,6 +38,11 @@ function captureAndSendLogs() {
   postMessage({ type: 'action:addLogs', payload: { logs: entries } });
 }
 
+function deactivateAnnotateMode() {
+  toolbar.setAnnotateActive(false);
+  annotationOverlay.setActive(false);
+  overlay.setMode('off');
+}
 const toolbar = createToolbar(toolbarContainer, postMessage, {
   onLogsRequest() {
     captureAndSendLogs();
@@ -53,6 +59,39 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
   onBackendSelect(backend: string) {
     postMessage({ type: 'backend:select', payload: { backend } });
   },
+  onAnnotateTool(tool) {
+    annotationOverlay.setTool(tool);
+  },
+  onAnnotateColor(color) {
+    annotationOverlay.setColor(color);
+  },
+  onAnnotateUndo() {
+    annotationOverlay.undo();
+  },
+  onAnnotateClear() {
+    if (annotationOverlay.hasShapes()) {
+      annotationOverlay.clear();
+    }
+  },
+  async onAnnotateSend(prompt) {
+    const screenshotDataUrl = await overlay.requestScreenshot();
+    const imageDataUrl = await annotationOverlay.composite(screenshotDataUrl);
+    postMessage({ type: 'annotate:sendToChat', payload: { imageDataUrl, prompt } });
+    annotationOverlay.clear();
+    deactivateAnnotateMode();
+  },
+  onAnnotateDismiss() {
+    const hadShapes = annotationOverlay.hasShapes();
+    if (hadShapes && !window.confirm('Discard annotations?')) {
+      return;
+    }
+
+    if (hadShapes) {
+      annotationOverlay.clear();
+    }
+
+    deactivateAnnotateMode();
+  },
 });
 
 // ── Get iframe reference ────────────────────────────────────
@@ -60,15 +99,22 @@ const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
 
 // ── Initialize inspect overlay (message relay) ──────────────
 const overlay = createInspectOverlay(iframe, postMessage);
+const annotationOverlay = createAnnotationOverlay(iframe);
 
 // Sync toolbar state changes with overlay mode
 toolbar.onStateChange((state) => {
-  if (state.inspectActive) {
+  if (state.annotateActive) {
+    overlay.setMode('off');
+    annotationOverlay.setActive(true);
+  } else if (state.inspectActive) {
     overlay.setMode('inspect');
+    annotationOverlay.setActive(false);
   } else if (state.addElementActive) {
     overlay.setMode('addElement');
+    annotationOverlay.setActive(false);
   } else {
     overlay.setMode('off');
+    annotationOverlay.setActive(false);
   }
 });
 
@@ -167,11 +213,13 @@ window.addEventListener('message', async (event: MessageEvent) => {
     case 'mode:inspect':
       toolbar.setInspectActive(msg.payload.enabled);
       overlay.setMode(msg.payload.enabled ? 'inspect' : 'off');
+      annotationOverlay.setActive(false);
       break;
 
     case 'mode:addElement':
       toolbar.setAddElementActive(msg.payload.enabled);
       overlay.setMode(msg.payload.enabled ? 'addElement' : 'off');
+      annotationOverlay.setActive(false);
       break;
 
     case 'screenshot:request': {

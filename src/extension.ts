@@ -60,6 +60,15 @@ export function activate(context: vscode.ExtensionContext) {
         result = await adapter.deliver(bundle);
         break;
       }
+      case 'annotate:sendToChat': {
+        const bundle = contextExtractor.fromAnnotation(
+          message.payload.imageDataUrl,
+          message.payload.prompt,
+          url
+        );
+        result = await adapter.deliver(bundle);
+        break;
+      }
       case 'action:addLogs': {
         const bundle = contextExtractor.fromLogs(message.payload.logs, url);
         result = await adapter.deliver(bundle);
@@ -124,6 +133,7 @@ export function activate(context: vscode.ExtensionContext) {
         break;
       }
       case 'inspect:sendToChat':
+      case 'annotate:sendToChat':
       case 'addElement:captured':
       case 'action:addLogs':
       case 'action:screenshot':

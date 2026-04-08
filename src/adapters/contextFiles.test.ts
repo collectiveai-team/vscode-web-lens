@@ -213,6 +213,25 @@ describe('formatContextFile', () => {
     expect(result).not.toContain('Element HTML:');
     expect(result.endsWith('\n')).toBe(true);
   });
+
+  it('includes annotation prompt after the main context body', () => {
+    const bundle: ContextBundle = {
+      url: 'http://localhost:3000',
+      timestamp: Date.now(),
+      screenshot: {
+        dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+        width: 800,
+        height: 600,
+      },
+      annotation: 'Focus on the overlap between the tooltip and button.',
+    };
+
+    const result = formatContextFile(bundle);
+
+    expect(result).toContain('Web Lens Context from http://localhost:3000');
+    expect(result).toContain('\n\nAnnotation Prompt:\nFocus on the overlap between the tooltip and button.');
+    expect(result.endsWith('\n')).toBe(true);
+  });
 });
 
 describe('resolveContextDir', () => {

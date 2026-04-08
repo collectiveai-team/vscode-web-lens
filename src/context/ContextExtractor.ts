@@ -98,6 +98,24 @@ export class ContextExtractor {
     };
   }
 
+  fromAnnotation(
+    imageDataUrl: string,
+    prompt: string,
+    url: string
+  ): ContextBundle {
+    const bundle: ContextBundle = {
+      url,
+      timestamp: Date.now(),
+      screenshot: { dataUrl: imageDataUrl, ...getImageDimensions(imageDataUrl) },
+    };
+
+    if (prompt) {
+      bundle.annotation = prompt;
+    }
+
+    return bundle;
+  }
+
   fromLogs(logs: ConsoleEntry[], url: string): ContextBundle {
     return {
       url,

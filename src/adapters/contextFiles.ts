@@ -95,6 +95,12 @@ export function formatContextFile(bundle: ContextBundle): string {
     }
   }
 
+  if (bundle.annotation) {
+    lines.push('');
+    lines.push('Annotation Prompt:');
+    lines.push(bundle.annotation);
+  }
+
   lines.push('');
   return lines.join('\n');
 }

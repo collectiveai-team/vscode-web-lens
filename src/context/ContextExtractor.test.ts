@@ -84,6 +84,31 @@ describe('ContextExtractor', () => {
     expect(bundle.element).toBeUndefined();
   });
 
+  it('builds annotation bundle with screenshot and prompt text', () => {
+    const dataUrl = syntheticPng(1280, 720);
+    const bundle = extractor.fromAnnotation(
+      dataUrl,
+      'Describe the visual bug in this screenshot.',
+      'http://localhost:3000/page'
+    );
+
+    expect(bundle.url).toBe('http://localhost:3000/page');
+    expect(bundle.annotation).toBe('Describe the visual bug in this screenshot.');
+    expect(bundle.screenshot?.dataUrl).toBe(dataUrl);
+    expect(bundle.screenshot?.width).toBe(1280);
+    expect(bundle.screenshot?.height).toBe(720);
+    expect(bundle.element).toBeUndefined();
+    expect(bundle.logs).toBeUndefined();
+  });
+
+  it('omits annotation text when annotation prompt is empty', () => {
+    const dataUrl = syntheticPng(400, 300);
+    const bundle = extractor.fromAnnotation(dataUrl, '', 'http://localhost:3000/page');
+
+    expect(bundle.annotation).toBeUndefined();
+    expect(bundle.screenshot?.dataUrl).toBe(dataUrl);
+  });
+
   it('maps attributes, innerText, computedStyles from payload', () => {
     const bundle = extractor.fromCapturedElement(
       {
