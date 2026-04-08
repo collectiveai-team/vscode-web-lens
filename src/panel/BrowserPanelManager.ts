@@ -43,7 +43,7 @@ export class BrowserPanelManager {
     await this.proxyServer.start();
     webLensLogger.info('Opening browser panel', { url: this.state.url });
 
-    this.panel = vscode.window.createWebviewPanel(
+    const panel = vscode.window.createWebviewPanel(
       'webLens',
       'Web Lens Debug',
       vscode.ViewColumn.One,
@@ -58,25 +58,25 @@ export class BrowserPanelManager {
       }
     );
 
-    this.panel.webview.html = this.getHtmlForWebview();
-
-    this.panel.webview.onDidReceiveMessage(
-      (message: WebviewMessage) => this.handleMessage(message)
-    );
-
-    this.panel.onDidDispose(() => {
-      webLensLogger.info('Browser panel disposed');
-      this.panel = undefined;
-      this.proxyServer.stop().catch(() => {
-        // Ignore stop errors on dispose
-      });
-    });
+    this.setupPanel(panel);
 
     // Navigate to default URL (through proxy)
     const proxiedUrl = this.proxyServer.getProxiedUrl(this.state.url);
     this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
     this.sendStorageState().catch((err) => {
       webLensLogger.warn('BrowserPanelManager: failed to send initial storage state', String(err));
+    });
+  }
+
+  async restore(panel: vscode.WebviewPanel, url: string): Promise<void> {
+    webLensLogger.info('Restoring browser panel from saved state', { url });
+    await this.proxyServer.start();
+    this.state.url = url;
+    this.setupPanel(panel);
+    const proxiedUrl = this.proxyServer.getProxiedUrl(url);
+    this.postMessage({ type: 'navigate:url', payload: { url: proxiedUrl } });
+    this.sendStorageState().catch((err) => {
+      webLensLogger.warn('BrowserPanelManager: failed to send storage state on restore', String(err));
     });
   }
 
@@ -244,6 +244,23 @@ export class BrowserPanelManager {
   refreshStorageState(): void {
     this.sendStorageState().catch((err) => {
       webLensLogger.warn('BrowserPanelManager: failed to refresh storage state', String(err));
+    });
+  }
+
+  private setupPanel(panel: vscode.WebviewPanel): void {
+    this.panel = panel;
+    this.panel.webview.html = this.getHtmlForWebview();
+
+    this.panel.webview.onDidReceiveMessage(
+      (message: WebviewMessage) => this.handleMessage(message)
+    );
+
+    this.panel.onDidDispose(() => {
+      webLensLogger.info('Browser panel disposed');
+      this.panel = undefined;
+      this.proxyServer.stop().catch(() => {
+        // Ignore stop errors on dispose
+      });
     });
   }
 

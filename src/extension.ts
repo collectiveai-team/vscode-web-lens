@@ -68,8 +68,6 @@ export function activate(context: vscode.ExtensionContext) {
       case 'action:screenshot': {
         const bundle = contextExtractor.fromScreenshot(
           message.payload.dataUrl,
-          0,
-          0,
           url
         );
         result = await adapter.deliver(bundle);
@@ -159,6 +157,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   });
+
+  // Restore the panel after VS Code reloads
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer('webLens', {
+      async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
+        const savedUrl = (state as { url?: string } | null)?.url;
+        const config = vscode.workspace.getConfiguration('webLens');
+        const url = savedUrl ?? config.get<string>('defaultUrl') ?? 'http://localhost:3000';
+        await panelManager!.restore(panel, url);
+      },
+    })
+  );
 
   // Listen for config changes
   context.subscriptions.push(

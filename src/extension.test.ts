@@ -83,6 +83,7 @@ vi.mock('vscode', () => ({
   window: {
     onDidChangeActiveColorTheme: vi.fn(() => ({ dispose: vi.fn() })),
     showInputBox: vi.fn(),
+    registerWebviewPanelSerializer: vi.fn(() => ({ dispose: vi.fn() })),
   },
   commands: {
     registerCommand: vi.fn(() => ({ dispose: vi.fn() })),
