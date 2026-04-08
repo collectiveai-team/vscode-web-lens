@@ -297,7 +297,6 @@ async function main(): Promise<void> {
         logFn(`[${source}] ${msg}`);
         break;
       }
-
       case 'inspect:sendToChat':
       case 'annotate:sendToChat':
       case 'addElement:captured':

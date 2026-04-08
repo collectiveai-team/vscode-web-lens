@@ -43,7 +43,6 @@ function deactivateAnnotateMode() {
   annotationOverlay.setActive(false);
   overlay.setMode('off');
 }
-
 const toolbar = createToolbar(toolbarContainer, postMessage, {
   onLogsRequest() {
     captureAndSendLogs();
