@@ -1,6 +1,11 @@
-import type { WebviewMessage } from '../types';
+import type { RecordOptions, WebviewMessage } from '../types';
 import type { AnnotationTool } from './annotation-overlay';
-import { createToolbarDiagnostic, getInstructionBannerHtml } from './toolbarDiagnostics';
+import {
+  createToolbarDiagnostic,
+  getInstructionBannerHtml,
+  getRecordActiveBannerHtml,
+  getRecordConfigBannerHtml,
+} from './toolbarDiagnostics';
 
 type PostMessage = (msg: WebviewMessage) => void;
 
@@ -8,6 +13,8 @@ interface ToolbarState {
   inspectActive: boolean;
   addElementActive: boolean;
   annotateActive: boolean;
+  recordPending: boolean;
+  recordActive: boolean;
 }
 
 interface ToolbarElements {
@@ -15,6 +22,7 @@ interface ToolbarElements {
   btnInspect: HTMLButtonElement;
   btnAddElement: HTMLButtonElement;
   btnAnnotate: HTMLButtonElement;
+  btnRecord: HTMLButtonElement;
   banner: HTMLElement;
   annotationStrip: HTMLElement;
 }
@@ -30,6 +38,8 @@ interface ToolbarCallbacks {
   onAnnotateClear?: () => void;
   onAnnotateSend?: (prompt: string) => void;
   onAnnotateDismiss?: () => void;
+  onRecordStart?: (opts: RecordOptions) => void;
+  onRecordStop?: () => void;
 }
 
 export interface ToolbarAPI {
@@ -39,6 +49,9 @@ export interface ToolbarAPI {
   setAnnotateActive(active: boolean): void;
   setBackendState(active: string, available: Record<string, boolean>): void;
   setStorageDataState(enabled: boolean, hasData: boolean): void;
+  setRecordActive(active: boolean): void;
+  setRecordOptions(opts: RecordOptions): void;
+  updateRecordingStatus(eventCount: number, elapsedSeconds: number): void;
   onStateChange(cb: (state: ToolbarState) => void): void;
 }
 
@@ -51,12 +64,22 @@ export function createToolbar(
     inspectActive: false,
     addElementActive: false,
     annotateActive: false,
+    recordPending: false,
+    recordActive: false,
   };
 
   let activeAnnotationTool: AnnotationTool = 'pen';
   let activeAnnotationColor = '#ff3b30';
   const annotationTools: AnnotationTool[] = ['pen', 'arrow', 'rect', 'ellipse', 'text', 'callout'];
   const annotationColors = ['#ff3b30', '#ff4d4f', '#ffd60a', '#34c759', '#0a84ff', '#bf5af2'];
+
+  let recordOpts: RecordOptions = {
+    captureConsole: false,
+    captureScroll: false,
+    captureHover: false,
+  };
+  let recordEventCount = 0;
+  let recordElapsedSeconds = 0;
 
   let stateChangeCallback: ((state: ToolbarState) => void) | undefined;
 
@@ -82,6 +105,9 @@ export function createToolbar(
       </button>
       <button class="toolbar-btn" id="btn-add-element" title="Add Element to Chat">
         <span class="material-symbols-outlined">add_comment</span>
+      </button>
+      <button class="toolbar-btn" id="btn-record" title="Record interactions">
+        <span class="material-symbols-outlined">radio_button_checked</span>
       </button>
       <button class="toolbar-btn" id="btn-annotate" title="Annotate Screenshot">
         <span class="material-symbols-outlined">draw</span>
@@ -179,6 +205,7 @@ export function createToolbar(
   const btnInspect = container.querySelector('#btn-inspect') as HTMLButtonElement;
   const btnAddElement = container.querySelector('#btn-add-element') as HTMLButtonElement;
   const btnAnnotate = container.querySelector('#btn-annotate') as HTMLButtonElement;
+  const btnRecord = container.querySelector('#btn-record') as HTMLButtonElement;
   const btnAddLogs = container.querySelector('#btn-add-logs') as HTMLButtonElement;
   const btnScreenshot = container.querySelector('#btn-screenshot') as HTMLButtonElement;
   const btnOverflow = container.querySelector('#btn-overflow') as HTMLButtonElement;
@@ -215,12 +242,16 @@ export function createToolbar(
     },
   };
 
-  const elements: ToolbarElements = { urlBar, btnInspect, btnAddElement, btnAnnotate, banner, annotationStrip };
+  const elements: ToolbarElements = { urlBar, btnInspect, btnAddElement, btnAnnotate, btnRecord, banner, annotationStrip };
 
-  function clearOtherModes(nextMode: 'inspect' | 'addElement' | 'annotate') {
+  function clearOtherModes(nextMode: 'inspect' | 'addElement' | 'annotate' | 'record') {
     if (nextMode !== 'inspect') state.inspectActive = false;
     if (nextMode !== 'addElement') state.addElementActive = false;
     if (nextMode !== 'annotate') state.annotateActive = false;
+    if (nextMode !== 'record') {
+      state.recordPending = false;
+      state.recordActive = false;
+    }
   }
 
   function updateAnnotationControls() {
@@ -276,6 +307,17 @@ export function createToolbar(
     }
     postMessage(createToolbarDiagnostic(`Add-element toggled ${state.addElementActive ? 'on' : 'off'}`));
     updateModeUI();
+    stateChangeCallback?.({ ...state });
+  });
+
+  btnRecord.addEventListener('click', () => {
+    if (state.recordActive) return;
+    if (!state.recordPending) {
+      clearOtherModes('record');
+    }
+    state.recordPending = !state.recordPending;
+    postMessage(createToolbarDiagnostic(`Record button toggled ${state.recordPending ? 'pending' : 'off'}`));
+    updateRecordUI();
     stateChangeCallback?.({ ...state });
   });
 
@@ -408,12 +450,13 @@ export function createToolbar(
   // ── ESC key handler ───────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      if (state.recordActive || state.recordPending) return;
+
       if (state.annotateActive) {
         postMessage(createToolbarDiagnostic('Escape pressed - annotate dismiss requested'));
         callbacks?.onAnnotateDismiss?.();
         return;
       }
-
       state.inspectActive = false;
       state.addElementActive = false;
       state.annotateActive = false;
@@ -428,11 +471,76 @@ export function createToolbar(
     elements.btnInspect.classList.toggle('active', state.inspectActive);
     elements.btnAddElement.classList.toggle('active', state.addElementActive);
     elements.btnAnnotate.classList.toggle('active', state.annotateActive);
+    elements.btnRecord.classList.toggle('active', state.recordPending || state.recordActive);
+    elements.btnRecord.classList.toggle('record-active', state.recordActive);
+    elements.btnInspect.disabled = state.recordActive;
+    elements.btnAddElement.disabled = state.recordActive;
+    elements.btnAnnotate.disabled = state.recordActive;
     elements.banner.innerHTML = getInstructionBannerHtml(state);
     elements.banner.classList.toggle('visible', state.inspectActive || state.addElementActive || state.annotateActive);
     elements.annotationStrip.classList.toggle('visible', state.annotateActive);
     container.classList.toggle('mode-active', state.inspectActive || state.addElementActive || state.annotateActive);
     updateAnnotationControls();
+  }
+
+  function updateRecordUI() {
+    elements.btnRecord.classList.toggle('active', state.recordPending || state.recordActive);
+    elements.btnRecord.classList.toggle('record-active', state.recordActive);
+    elements.btnInspect.disabled = state.recordActive;
+    elements.btnAddElement.disabled = state.recordActive;
+    elements.btnAnnotate.disabled = state.recordActive;
+    elements.annotationStrip.classList.remove('visible');
+
+    if (state.recordPending) {
+      elements.banner.innerHTML = getRecordConfigBannerHtml(recordOpts);
+      elements.banner.classList.add('visible');
+      attachConfigHandlers();
+    } else if (state.recordActive) {
+      elements.banner.innerHTML = getRecordActiveBannerHtml(recordEventCount, recordElapsedSeconds);
+      elements.banner.classList.add('visible');
+      attachStopHandler();
+    } else {
+      updateModeUI();
+    }
+  }
+
+  function attachConfigHandlers() {
+    const bannerEl = elements.banner;
+
+    bannerEl.querySelectorAll<HTMLInputElement>('[data-record-opt]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const key = cb.dataset.recordOpt as keyof RecordOptions;
+        if (key in recordOpts) {
+          recordOpts[key] = cb.checked;
+        }
+      });
+    });
+
+    const startBtn = bannerEl.querySelector('[data-record-start]') as HTMLButtonElement | null;
+    startBtn?.addEventListener('click', () => {
+      state.recordPending = false;
+      state.recordActive = true;
+      recordEventCount = 0;
+      recordElapsedSeconds = 0;
+      postMessage(createToolbarDiagnostic('Recording started'));
+      callbacks?.onRecordStart?.({ ...recordOpts });
+      updateRecordUI();
+    });
+
+    const cancelBtn = bannerEl.querySelector('[data-record-cancel]') as HTMLButtonElement | null;
+    cancelBtn?.addEventListener('click', () => {
+      state.recordPending = false;
+      postMessage(createToolbarDiagnostic('Record config cancelled'));
+      updateRecordUI();
+    });
+  }
+
+  function attachStopHandler() {
+    const stopBtn = elements.banner.querySelector('[data-record-stop]') as HTMLButtonElement | null;
+    stopBtn?.addEventListener('click', () => {
+      postMessage(createToolbarDiagnostic('Recording stopped'));
+      callbacks?.onRecordStop?.();
+    });
   }
 
   // Backend state
@@ -537,6 +645,29 @@ export function createToolbar(
     setStorageDataState(enabled: boolean, hasData: boolean) {
       menuStorageCheck.style.display = enabled ? 'inline' : 'none';
       menuStorageView.style.display = (enabled && hasData) ? '' : 'none';
+    },
+
+    setRecordActive(active: boolean) {
+      state.recordActive = active;
+      state.recordPending = false;
+      if (!active) {
+        recordEventCount = 0;
+        recordElapsedSeconds = 0;
+      }
+      updateRecordUI();
+    },
+
+    setRecordOptions(opts: RecordOptions) {
+      recordOpts = { ...opts };
+    },
+
+    updateRecordingStatus(eventCount: number, elapsedSeconds: number) {
+      recordEventCount = eventCount;
+      recordElapsedSeconds = elapsedSeconds;
+      if (state.recordActive) {
+        elements.banner.innerHTML = getRecordActiveBannerHtml(recordEventCount, recordElapsedSeconds);
+        attachStopHandler();
+      }
     },
 
     onStateChange(cb: (state: ToolbarState) => void) {
