@@ -48,6 +48,10 @@
       {
         "command": "webLens.showLogs",
         "title": "Web Lens: Show Logs"
+      },
+      {
+        "command": "webLens.record",
+        "title": "Web Lens: Toggle Recording"
       }
     ],
     "configuration": {

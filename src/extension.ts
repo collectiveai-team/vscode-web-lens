@@ -7,11 +7,13 @@ import { OpenCodeAdapter } from './adapters/OpenCodeAdapter';
 import { OpenChamberAdapter } from './adapters/OpenChamberAdapter';
 import { CodexAdapter } from './adapters/CodexAdapter';
 import { ClaudeCodeAdapter } from './adapters/ClaudeCodeAdapter';
-import type { WebviewMessage } from './types';
+import { RecordingSession } from './recording/RecordingSession';
+import type { WebviewMessage, RecordOptions } from './types';
 import { webLensLogger } from './logging';
 import { CookieStore } from './cookies/CookieStore';
 
 let panelManager: BrowserPanelManager | undefined;
+let activeRecording: RecordingSession | undefined;
 let contextExtractor: ContextExtractor;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -165,6 +167,60 @@ export function activate(context: vscode.ExtensionContext) {
         }
         break;
       }
+      case 'recording:start': {
+        activeRecording?.dispose();
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) {
+          panelManager?.postMessage({
+            type: 'toast',
+            payload: {
+              message: 'No workspace folder open - cannot save recording.',
+              toastType: 'error',
+            },
+          });
+          break;
+        }
+
+        const opts: RecordOptions = message.payload;
+        void context.workspaceState.update('webLens.recordOptions', opts);
+        activeRecording = new RecordingSession({
+          workspaceRoot: folders[0].uri.fsPath,
+          startUrl: currentUrl,
+          userAgent: 'Web Lens / VS Code',
+          captureConsole: opts.captureConsole,
+          captureScroll: opts.captureScroll,
+          captureHover: opts.captureHover,
+        });
+        panelManager?.postMessage({ type: 'recording:started' });
+        break;
+      }
+      case 'recording:stop': {
+        if (!activeRecording) {
+          break;
+        }
+
+        const session = activeRecording;
+        activeRecording = undefined;
+        session
+          .save()
+          .then((filePath) => {
+            panelManager?.postMessage({
+              type: 'recording:stopped',
+              payload: { filePath },
+            });
+          })
+          .catch((err) => {
+            webLensLogger.error('Failed to save recording', err);
+            panelManager?.postMessage({
+              type: 'toast',
+              payload: { message: 'Failed to save recording.', toastType: 'error' },
+            });
+          });
+        break;
+      }
+      case 'recording:event':
+        activeRecording?.addEvent(message.payload);
+        break;
     }
   });
 
@@ -217,6 +273,11 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('webLens.open', async () => {
       webLensLogger.info('Open command invoked');
       await panelManager!.open();
+      const saved = context.workspaceState.get<RecordOptions>('webLens.recordOptions');
+      panelManager?.postMessage({
+        type: 'recording:initOptions',
+        payload: saved ?? { captureConsole: false, captureScroll: false, captureHover: false },
+      });
     }),
     vscode.commands.registerCommand('webLens.openUrl', async () => {
       const url = await vscode.window.showInputBox({
@@ -250,11 +311,32 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('webLens.showLogs', () => {
       webLensLogger.show();
+    }),
+    vscode.commands.registerCommand('webLens.record', async () => {
+      if (!panelManager) {
+        return;
+      }
+
+      await panelManager.open();
+      if (activeRecording) {
+        panelManager.postMessage({ type: 'mode:record', payload: { enabled: false } });
+      } else {
+        const saved =
+          context.workspaceState.get<RecordOptions>('webLens.recordOptions') ?? {
+            captureConsole: false,
+            captureScroll: false,
+            captureHover: false,
+          };
+        panelManager.postMessage({ type: 'recording:initOptions', payload: saved });
+        panelManager.postMessage({ type: 'mode:record', payload: { enabled: true } });
+      }
     })
   );
 }
 
 export function deactivate() {
+  activeRecording?.dispose();
+  activeRecording = undefined;
   panelManager?.dispose();
   panelManager = undefined;
   webLensLogger.info('Extension deactivated');
