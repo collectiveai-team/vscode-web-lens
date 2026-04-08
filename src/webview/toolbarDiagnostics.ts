@@ -3,6 +3,7 @@ import type { WebviewMessage } from '../types';
 interface ToolbarStateSnapshot {
   inspectActive: boolean;
   addElementActive: boolean;
+  annotateActive: boolean;
 }
 
 export function createToolbarDiagnostic(message: string, details?: string): WebviewMessage {
@@ -24,6 +25,8 @@ export function getInstructionBannerHtml(state: ToolbarStateSnapshot): string {
     message = 'Inspect mode active - hover elements, click to inspect';
   } else if (state.addElementActive) {
     message = 'Click any element to add it to chat';
+  } else if (state.annotateActive) {
+    message = 'Annotation mode active - draw, then press Send to attach to chat';
   }
 
   if (!message) {

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an Annotation Mode toolbar button that overlays a transparent SVG canvas on the live iframe, lets users draw shapes/text/callouts, and sends the composite annotated screenshot to chat.
+**Goal:** Add an Annotation Mode toolbar button that overlays a transparent SVG canvas on the live iframe, lets users draw shapes/text/callouts, and sends the composite annotated screenshot plus optional prompt text to chat.
 
-**Architecture:** An `<svg>` element is absolutely positioned over `#browser-iframe` in the webview. All annotation shapes are SVG child elements (freehand `<path>`, `<line>`, `<rect>`, `<ellipse>`, `<text>`, callout circles). On "Send", the iframe screenshot and SVG are composited onto an offscreen `<canvas>` and the resulting PNG is posted to the extension host as `annotate:sendToChat`. A dedicated annotation strip slides in below the toolbar (extending the existing instruction-banner mechanism) holding all tool controls.
+**Architecture:** An `<svg>` element is absolutely positioned over `#browser-iframe` in the webview. All annotation shapes are SVG child elements (freehand `<path>`, `<line>`, `<rect>`, `<ellipse>`, `<text>`, callout circles). The text tool uses a temporary HTML `<input>` positioned over the iframe container, then commits to SVG `<text>`. On "Send", the iframe screenshot and SVG are composited onto an offscreen `<canvas>` and the resulting PNG is posted to the extension host as `annotate:sendToChat`. The optional prompt text is stored separately in `ContextBundle.annotation` so the existing context-file pipeline can preserve it for every backend. The toolbar, instruction banner, annotation strip, and browser frame should sit in a flex column layout so the extra strip does not shrink or clip the iframe unexpectedly.
 
 **Tech Stack:** TypeScript, SVG DOM API, HTML5 Canvas (offscreen compositing only), VS Code Webview API, Vitest
 
@@ -24,6 +24,8 @@
 | **Modify** | `src/webview/main.ts` | Import and wire `AnnotationOverlay` to toolbar state |
 | **Modify** | `src/extension.ts` | Handle `annotate:sendToChat` in `deliverContext` and message switch |
 | **Modify** | `src/context/ContextExtractor.ts` | Add `fromAnnotation` method |
+| **Modify** | `src/adapters/contextFiles.ts` | Serialize `ContextBundle.annotation` into the saved context text file |
+| **Modify** | `webview/main.css` | Convert the webview shell to a flex column and style the annotation strip |
 
 ---
 
@@ -65,6 +67,8 @@ npx tsc --noEmit
 ```
 
 Expected: zero errors. (Only `src/types.ts` changes in this task — downstream files that reference `ContextBundle` will still compile since `annotation` is optional.)
+
+This task only adds the type surface. The prompt text will not reach backends until Task 6 updates the context serialization path.
 
 - [ ] **Step 3: Commit**
 
@@ -730,7 +734,7 @@ git commit -m "feat(toolbar): extend ToolbarStateSnapshot with annotateActive"
 **Files:**
 - Modify: `src/webview/toolbar.ts`
 
-This is the largest change. We add `annotateActive` to state, an annotate toolbar button, and a full-width annotation strip that slides in below the toolbar.
+This is the largest change. We add `annotateActive` to state, an annotate toolbar button, and a full-width annotation strip that sits below the instruction banner.
 
 - [ ] **Step 1: Add `annotateActive` to `ToolbarState` and `ToolbarElements`, and the annotate button HTML**
 
@@ -797,6 +801,8 @@ In `createToolbar`, after the banner creation block (after line 109), add:
   annotateStrip.innerHTML = getAnnotationStripHtml();
   container.parentElement?.insertBefore(annotateStrip, banner.nextSibling);
 ```
+
+Keep the strip in normal document flow. Do not absolutely position it over the iframe.
 
 **`getAnnotationStripHtml` function** — add this near the top of the file (after the imports):
 
@@ -1129,11 +1135,12 @@ git commit -m "feat(webview): wire annotation overlay into toolbar state"
 
 ---
 
-## Task 6: Handle `annotate:sendToChat` in the extension host
+## Task 6: Handle `annotate:sendToChat` in the extension host and persist the prompt text
 
 **Files:**
 - Modify: `src/context/ContextExtractor.ts`
 - Modify: `src/extension.ts`
+- Modify: `src/adapters/contextFiles.ts`
 
 - [ ] **Step 1: Add `fromAnnotation` to `ContextExtractor`**
 
@@ -1156,7 +1163,21 @@ In `src/context/ContextExtractor.ts`, add a new method after `fromScreenshot`:
 
 (`ContextBundle.annotation` was already added in Task 1.)
 
-- [ ] **Step 2: Handle the message in `extension.ts` — `deliverContext`**
+- [ ] **Step 2: Serialize `ContextBundle.annotation` in `src/adapters/contextFiles.ts`**
+
+Update `formatContextFile` so the optional annotation prompt is written into the saved text context:
+
+```typescript
+  if (bundle.annotation) {
+    lines.push('');
+    lines.push('Annotation Prompt:');
+    lines.push(bundle.annotation);
+  }
+```
+
+Place this near the other top-level context sections so every adapter that consumes `@` file references preserves the user prompt.
+
+- [ ] **Step 3: Handle the message in `extension.ts` — `deliverContext`**
 
 In `src/extension.ts`, in the `deliverContext` switch statement, add a new case before `default`:
 
@@ -1172,7 +1193,7 @@ In `src/extension.ts`, in the `deliverContext` switch statement, add a new case 
     }
 ```
 
-- [ ] **Step 3: Add `annotate:sendToChat` to the message dispatch switch**
+- [ ] **Step 4: Add `annotate:sendToChat` to the message dispatch switch**
 
 In `extension.ts`, in the `panelManager.onMessage` switch, add alongside the existing action cases:
 
@@ -1185,25 +1206,25 @@ In `extension.ts`, in the `panelManager.onMessage` switch, add alongside the exi
         break;
 ```
 
-- [ ] **Step 4: Run type-checker and full test suite**
+- [ ] **Step 5: Run type-checker and full test suite**
 
 ```bash
 npx tsc --noEmit
 npx vitest run
 ```
 
-Expected: zero type errors, all 97+ tests pass.
+Expected: zero type errors, all 97+ tests pass. Confirm the relevant adapter and context-file tests cover the new `annotation` text output.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/context/ContextExtractor.ts src/extension.ts src/types.ts
+git add src/context/ContextExtractor.ts src/extension.ts src/adapters/contextFiles.ts src/types.ts
 git commit -m "feat(extension): handle annotate:sendToChat message and deliver to chat backend"
 ```
 
 ---
 
-## Task 7: Add CSS for the annotation strip and SVG overlay
+## Task 7: Update layout CSS for the annotation strip and SVG overlay
 
 **Files:**
 - Modify: `webview/` CSS (find the main stylesheet)
@@ -1214,9 +1235,31 @@ git commit -m "feat(extension): handle annotate:sendToChat message and deliver t
 find webview -name "*.css"
 ```
 
-- [ ] **Step 2: Add annotation strip styles**
+- [ ] **Step 2: Convert the webview shell to a flex column and add annotation strip styles**
 
-In the webview stylesheet, append these rules:
+In the webview stylesheet, update the shell layout so the toolbar, banner, and annotation strip stay in normal flow while `#browser-frame` fills the remaining height. Do not rely on `calc(100% - 34px)` once the strip is introduced.
+
+Use a structure like this before the strip-specific rules:
+
+```css
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+#toolbar,
+.instruction-banner,
+.annotation-strip {
+  flex: 0 0 auto;
+}
+
+#browser-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+```
+
+Then add the strip rules:
 
 ```css
 /* ── Annotation strip ─────────────────────────────── */

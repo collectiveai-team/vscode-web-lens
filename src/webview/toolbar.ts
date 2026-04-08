@@ -1,4 +1,5 @@
 import type { WebviewMessage } from '../types';
+import type { AnnotationTool } from './annotation-overlay';
 import { createToolbarDiagnostic, getInstructionBannerHtml } from './toolbarDiagnostics';
 
 type PostMessage = (msg: WebviewMessage) => void;
@@ -6,19 +7,36 @@ type PostMessage = (msg: WebviewMessage) => void;
 interface ToolbarState {
   inspectActive: boolean;
   addElementActive: boolean;
+  annotateActive: boolean;
 }
 
 interface ToolbarElements {
   urlBar: HTMLInputElement;
   btnInspect: HTMLButtonElement;
   btnAddElement: HTMLButtonElement;
+  btnAnnotate: HTMLButtonElement;
   banner: HTMLElement;
+  annotationStrip: HTMLElement;
+}
+
+interface ToolbarCallbacks {
+  onLogsRequest?: () => void;
+  onScreenshotRequest?: () => void;
+  onBackendRequest?: () => void;
+  onBackendSelect?: (backend: string) => void;
+  onAnnotateTool?: (tool: AnnotationTool) => void;
+  onAnnotateColor?: (color: string) => void;
+  onAnnotateUndo?: () => void;
+  onAnnotateClear?: () => void;
+  onAnnotateSend?: (prompt: string) => void;
+  onAnnotateDismiss?: () => void;
 }
 
 export interface ToolbarAPI {
   setUrl(url: string): void;
   setInspectActive(active: boolean): void;
   setAddElementActive(active: boolean): void;
+  setAnnotateActive(active: boolean): void;
   setBackendState(active: string, available: Record<string, boolean>): void;
   setStorageDataState(enabled: boolean, hasData: boolean): void;
   onStateChange(cb: (state: ToolbarState) => void): void;
@@ -27,17 +45,18 @@ export interface ToolbarAPI {
 export function createToolbar(
   container: HTMLElement,
   postMessage: PostMessage,
-  callbacks?: {
-    onLogsRequest?: () => void;
-    onScreenshotRequest?: () => void;
-    onBackendRequest?: () => void;
-    onBackendSelect?: (backend: string) => void;
-  }
+  callbacks?: ToolbarCallbacks
 ): ToolbarAPI {
   const state: ToolbarState = {
     inspectActive: false,
     addElementActive: false,
+    annotateActive: false,
   };
+
+  let activeAnnotationTool: AnnotationTool = 'pen';
+  let activeAnnotationColor = '#ff3b30';
+  const annotationTools: AnnotationTool[] = ['pen', 'arrow', 'rect', 'ellipse', 'text', 'callout'];
+  const annotationColors = ['#ff3b30', '#ff4d4f', '#ffd60a', '#34c759', '#0a84ff', '#bf5af2'];
 
   let stateChangeCallback: ((state: ToolbarState) => void) | undefined;
 
@@ -63,6 +82,9 @@ export function createToolbar(
       </button>
       <button class="toolbar-btn" id="btn-add-element" title="Add Element to Chat">
         <span class="material-symbols-outlined">add_comment</span>
+      </button>
+      <button class="toolbar-btn" id="btn-annotate" title="Annotate Screenshot">
+        <span class="material-symbols-outlined">draw</span>
       </button>
       <div class="toolbar-divider"></div>
       <button class="toolbar-btn" id="btn-add-logs" title="Add Logs to Chat">
@@ -121,6 +143,34 @@ export function createToolbar(
   banner.innerHTML = getInstructionBannerHtml(state);
   container.parentElement?.insertBefore(banner, container.nextSibling);
 
+  const annotationStrip = document.createElement('div');
+  annotationStrip.className = 'annotation-strip';
+  annotationStrip.id = 'annotation-strip';
+  annotationStrip.innerHTML = `
+    <div class="annotation-strip-section annotation-tools">
+      ${annotationTools.map((tool) => `
+        <button class="annotation-control annotation-tool" type="button" data-annotate-tool="${tool}">${tool}</button>
+      `).join('')}
+    </div>
+    <div class="annotation-strip-section annotation-colors">
+      ${annotationColors.map((color) => `
+        <button class="annotation-color" type="button" data-annotate-color="${color}" aria-label="Select color ${color}">
+          <span class="annotation-color-swatch" style="background:${color};"></span>
+        </button>
+      `).join('')}
+    </div>
+    <div class="annotation-strip-section annotation-actions">
+      <button class="annotation-control" id="annotation-undo" type="button">Undo</button>
+      <button class="annotation-control" id="annotation-clear" type="button">Clear</button>
+    </div>
+    <div class="annotation-strip-section annotation-compose">
+      <input id="annotation-prompt" class="annotation-prompt" type="text" placeholder="Add a note for chat" spellcheck="false" />
+      <button class="annotation-control annotation-send" id="annotation-send" type="button">Send</button>
+      <button class="annotation-control" id="annotation-dismiss" type="button">Dismiss</button>
+    </div>
+  `;
+  container.parentElement?.insertBefore(annotationStrip, banner.nextSibling);
+
   // ── Get references ─────────────────────────────────────────
   const urlBar = container.querySelector('#url-bar') as HTMLInputElement;
   const btnBack = container.querySelector('#btn-back') as HTMLButtonElement;
@@ -128,6 +178,7 @@ export function createToolbar(
   const btnReload = container.querySelector('#btn-reload') as HTMLButtonElement;
   const btnInspect = container.querySelector('#btn-inspect') as HTMLButtonElement;
   const btnAddElement = container.querySelector('#btn-add-element') as HTMLButtonElement;
+  const btnAnnotate = container.querySelector('#btn-annotate') as HTMLButtonElement;
   const btnAddLogs = container.querySelector('#btn-add-logs') as HTMLButtonElement;
   const btnScreenshot = container.querySelector('#btn-screenshot') as HTMLButtonElement;
   const btnOverflow = container.querySelector('#btn-overflow') as HTMLButtonElement;
@@ -141,6 +192,7 @@ export function createToolbar(
   const backendIconLight = container.querySelector('#backend-icon-light') as HTMLImageElement;
   const backendIconDark = container.querySelector('#backend-icon-dark') as HTMLImageElement;
   const backendIconClipboard = container.querySelector('#backend-icon-clipboard') as HTMLElement;
+  const annotationPrompt = annotationStrip.querySelector('#annotation-prompt') as HTMLInputElement;
 
   // Read icon URIs from the hidden data element
   const iconData = document.getElementById('backend-icons');
@@ -163,7 +215,22 @@ export function createToolbar(
     },
   };
 
-  const elements: ToolbarElements = { urlBar, btnInspect, btnAddElement, banner };
+  const elements: ToolbarElements = { urlBar, btnInspect, btnAddElement, btnAnnotate, banner, annotationStrip };
+
+  function clearOtherModes(nextMode: 'inspect' | 'addElement' | 'annotate') {
+    if (nextMode !== 'inspect') state.inspectActive = false;
+    if (nextMode !== 'addElement') state.addElementActive = false;
+    if (nextMode !== 'annotate') state.annotateActive = false;
+  }
+
+  function updateAnnotationControls() {
+    annotationStrip.querySelectorAll<HTMLElement>('[data-annotate-tool]').forEach((item) => {
+      item.classList.toggle('active', item.dataset.annotateTool === activeAnnotationTool);
+    });
+    annotationStrip.querySelectorAll<HTMLElement>('[data-annotate-color]').forEach((item) => {
+      item.classList.toggle('active', item.dataset.annotateColor === activeAnnotationColor);
+    });
+  }
 
   // ── Navigation ─────────────────────────────────────────────
   btnBack.addEventListener('click', () => {
@@ -195,7 +262,7 @@ export function createToolbar(
   btnInspect.addEventListener('click', () => {
     state.inspectActive = !state.inspectActive;
     if (state.inspectActive) {
-      state.addElementActive = false;
+      clearOtherModes('inspect');
     }
     postMessage(createToolbarDiagnostic(`Inspect toggled ${state.inspectActive ? 'on' : 'off'}`));
     updateModeUI();
@@ -205,11 +272,59 @@ export function createToolbar(
   btnAddElement.addEventListener('click', () => {
     state.addElementActive = !state.addElementActive;
     if (state.addElementActive) {
-      state.inspectActive = false;
+      clearOtherModes('addElement');
     }
     postMessage(createToolbarDiagnostic(`Add-element toggled ${state.addElementActive ? 'on' : 'off'}`));
     updateModeUI();
     stateChangeCallback?.({ ...state });
+  });
+
+  btnAnnotate.addEventListener('click', () => {
+    state.annotateActive = !state.annotateActive;
+    if (state.annotateActive) {
+      clearOtherModes('annotate');
+    }
+    postMessage(createToolbarDiagnostic(`Annotate toggled ${state.annotateActive ? 'on' : 'off'}`));
+    updateModeUI();
+    stateChangeCallback?.({ ...state });
+  });
+
+  annotationStrip.querySelectorAll<HTMLButtonElement>('[data-annotate-tool]').forEach((button) => {
+    button.addEventListener('click', () => {
+      activeAnnotationTool = button.dataset.annotateTool as AnnotationTool;
+      updateAnnotationControls();
+      callbacks?.onAnnotateTool?.(activeAnnotationTool);
+    });
+  });
+
+  annotationStrip.querySelectorAll<HTMLButtonElement>('[data-annotate-color]').forEach((button) => {
+    button.addEventListener('click', () => {
+      activeAnnotationColor = button.dataset.annotateColor || activeAnnotationColor;
+      updateAnnotationControls();
+      callbacks?.onAnnotateColor?.(activeAnnotationColor);
+    });
+  });
+
+  annotationStrip.querySelector('#annotation-undo')?.addEventListener('click', () => {
+    callbacks?.onAnnotateUndo?.();
+  });
+
+  annotationStrip.querySelector('#annotation-clear')?.addEventListener('click', () => {
+    callbacks?.onAnnotateClear?.();
+  });
+
+  annotationStrip.querySelector('#annotation-send')?.addEventListener('click', () => {
+    callbacks?.onAnnotateSend?.(annotationPrompt.value.trim());
+  });
+
+  annotationPrompt.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      callbacks?.onAnnotateSend?.(annotationPrompt.value.trim());
+    }
+  });
+
+  annotationStrip.querySelector('#annotation-dismiss')?.addEventListener('click', () => {
+    callbacks?.onAnnotateDismiss?.();
   });
 
   // ── Action buttons ────────────────────────────────────────
@@ -293,8 +408,15 @@ export function createToolbar(
   // ── ESC key handler ───────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      if (state.annotateActive) {
+        postMessage(createToolbarDiagnostic('Escape pressed - annotate dismiss requested'));
+        callbacks?.onAnnotateDismiss?.();
+        return;
+      }
+
       state.inspectActive = false;
       state.addElementActive = false;
+      state.annotateActive = false;
       postMessage(createToolbarDiagnostic('Escape pressed - modes cleared'));
       updateModeUI();
       stateChangeCallback?.({ ...state });
@@ -305,9 +427,12 @@ export function createToolbar(
   function updateModeUI() {
     elements.btnInspect.classList.toggle('active', state.inspectActive);
     elements.btnAddElement.classList.toggle('active', state.addElementActive);
+    elements.btnAnnotate.classList.toggle('active', state.annotateActive);
     elements.banner.innerHTML = getInstructionBannerHtml(state);
-    elements.banner.classList.toggle('visible', state.inspectActive || state.addElementActive);
-    container.classList.toggle('mode-active', state.inspectActive || state.addElementActive);
+    elements.banner.classList.toggle('visible', state.inspectActive || state.addElementActive || state.annotateActive);
+    elements.annotationStrip.classList.toggle('visible', state.annotateActive);
+    container.classList.toggle('mode-active', state.inspectActive || state.addElementActive || state.annotateActive);
+    updateAnnotationControls();
   }
 
   // Backend state
@@ -384,13 +509,19 @@ export function createToolbar(
 
     setInspectActive(active: boolean) {
       state.inspectActive = active;
-      if (active) state.addElementActive = false;
+      if (active) clearOtherModes('inspect');
       updateModeUI();
     },
 
     setAddElementActive(active: boolean) {
       state.addElementActive = active;
-      if (active) state.inspectActive = false;
+      if (active) clearOtherModes('addElement');
+      updateModeUI();
+    },
+
+    setAnnotateActive(active: boolean) {
+      state.annotateActive = active;
+      if (active) clearOtherModes('annotate');
       updateModeUI();
     },
 

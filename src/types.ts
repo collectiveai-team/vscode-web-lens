@@ -8,6 +8,7 @@ export type WebviewMessage =
   | { type: 'nav:reload'; payload: Record<string, never> }
   | { type: 'inspect:selected'; payload: InspectSelectedPayload }
   | { type: 'inspect:sendToChat'; payload: CapturedElementPayload }
+  | { type: 'annotate:sendToChat'; payload: { imageDataUrl: string; prompt: string } }
   | { type: 'addElement:captured'; payload: CapturedElementPayload }
   | { type: 'action:addLogs'; payload: { logs: ConsoleEntry[] } }
   | { type: 'action:screenshot'; payload: { dataUrl: string } }
@@ -81,6 +82,7 @@ export interface ContextBundle {
   element?: ElementContext;
   screenshot?: ScreenshotData;
   logs?: ConsoleEntry[];
+  annotation?: string;
 }
 
 export interface ElementContext {
