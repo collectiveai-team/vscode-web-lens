@@ -10,9 +10,11 @@ type ToolbarCallbacks = {
   onScreenshotRequest?: () => void;
   onBackendRequest?: () => void;
   onBackendSelect?: (backend: string) => void;
-  onAnnotateTool?: (tool: AnnotationTool) => void;
+  onAnnotateTool?: (tool: AnnotationTool | 'select') => void;
   onAnnotateColor?: (color: string) => void;
   onAnnotateUndo?: () => void;
+  onAnnotateRedo?: () => void;
+  onAnnotateDelete?: () => void;
   onAnnotateClear?: () => void;
   onAnnotateSend?: (prompt: string) => void;
   onAnnotateDismiss?: () => void;
@@ -35,6 +37,7 @@ const toolbarApi = {
   setInspectActive: vi.fn(),
   setAddElementActive: vi.fn(),
   setAnnotateActive: vi.fn(),
+  setAnnotateDeleteEnabled: vi.fn(),
   setBackendState: vi.fn(),
   setStorageDataState: vi.fn(),
   setRecordActive: vi.fn(),
@@ -54,6 +57,7 @@ const annotationOverlay = {
   setColor: vi.fn(),
   undo: vi.fn(),
   redo: vi.fn(),
+  deleteSelection: vi.fn(() => false),
   clear: vi.fn(),
   hasShapes: vi.fn(),
   composite: vi.fn<() => Promise<string>>(),
@@ -66,6 +70,7 @@ const consoleReceiver = {
 
 let toolbarCallbacks: ToolbarCallbacks | undefined;
 let stateChangeHandler: ((state: ToolbarState) => void) | undefined;
+let selectionChangeHandler: ((hasSelection: boolean) => void) | undefined;
 
 vi.mock('./toolbar', () => ({
   createToolbar: vi.fn((_container: HTMLElement, _postMessage: unknown, callbacks?: ToolbarCallbacks) => {
@@ -82,7 +87,10 @@ vi.mock('./inspect-overlay', () => ({
 }));
 
 vi.mock('./annotation-overlay', () => ({
-  createAnnotationOverlay: vi.fn(() => annotationOverlay),
+  createAnnotationOverlay: vi.fn((_iframe: HTMLIFrameElement, options?: { onSelectionChange?: (hasSelection: boolean) => void }) => {
+    selectionChangeHandler = options?.onSelectionChange;
+    return annotationOverlay;
+  }),
 }));
 
 vi.mock('./console-capture', () => ({
@@ -123,6 +131,7 @@ describe('webview main annotation + record wiring', () => {
     toolbarApi.setInspectActive.mockClear();
     toolbarApi.setAddElementActive.mockClear();
     toolbarApi.setAnnotateActive.mockClear();
+    toolbarApi.setAnnotateDeleteEnabled.mockClear();
     toolbarApi.setBackendState.mockClear();
     toolbarApi.setStorageDataState.mockClear();
     toolbarApi.setRecordActive.mockClear();
@@ -137,6 +146,7 @@ describe('webview main annotation + record wiring', () => {
     annotationOverlay.setColor.mockClear();
     annotationOverlay.undo.mockClear();
     annotationOverlay.redo.mockClear();
+    annotationOverlay.deleteSelection.mockClear();
     annotationOverlay.clear.mockReset();
     annotationOverlay.hasShapes.mockReset();
     annotationOverlay.composite.mockReset();
@@ -145,7 +155,10 @@ describe('webview main annotation + record wiring', () => {
   });
 
   it('activates annotation overlay and disables inspect overlay in annotate mode', () => {
-    expect(createAnnotationOverlay).toHaveBeenCalledWith(document.getElementById('browser-iframe'));
+    expect(createAnnotationOverlay).toHaveBeenCalledWith(
+      document.getElementById('browser-iframe'),
+      expect.objectContaining({ onSelectionChange: expect.any(Function) }),
+    );
 
     stateChangeHandler?.({ inspectActive: true, addElementActive: false, annotateActive: false });
     stateChangeHandler?.({ inspectActive: false, addElementActive: false, annotateActive: true });
@@ -154,6 +167,29 @@ describe('webview main annotation + record wiring', () => {
     expect(annotationOverlay.setActive).toHaveBeenNthCalledWith(1, false);
     expect(inspectOverlay.setMode).toHaveBeenNthCalledWith(2, 'off');
     expect(annotationOverlay.setActive).toHaveBeenNthCalledWith(2, true);
+  });
+
+  it('routes select tool callback to annotation overlay', () => {
+    toolbarCallbacks?.onAnnotateTool?.('select');
+    expect(annotationOverlay.setTool).toHaveBeenCalledWith('select');
+  });
+
+  it('updates toolbar delete enabled state when annotation selection changes', () => {
+    expect(selectionChangeHandler).toBeTypeOf('function');
+
+    selectionChangeHandler?.(true);
+    selectionChangeHandler?.(false);
+
+    expect(toolbarApi.setAnnotateDeleteEnabled).toHaveBeenNthCalledWith(1, true);
+    expect(toolbarApi.setAnnotateDeleteEnabled).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('routes annotate redo and delete callbacks to annotation overlay', () => {
+    toolbarCallbacks?.onAnnotateRedo?.();
+    toolbarCallbacks?.onAnnotateDelete?.();
+
+    expect(annotationOverlay.redo).toHaveBeenCalledTimes(1);
+    expect(annotationOverlay.deleteSelection).toHaveBeenCalledTimes(1);
   });
 
   it('sends annotated screenshot to chat and deactivates annotate mode', async () => {

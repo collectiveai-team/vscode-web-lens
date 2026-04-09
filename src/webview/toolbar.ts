@@ -9,7 +9,10 @@ import {
 
 declare const __EXTENSION_VERSION__: string;
 
+const extensionVersion = typeof __EXTENSION_VERSION__ === 'string' ? __EXTENSION_VERSION__ : '0.0.0';
+
 type PostMessage = (msg: WebviewMessage) => void;
+type ToolbarAnnotationTool = AnnotationTool | 'select';
 
 interface ToolbarState {
   inspectActive: boolean;
@@ -34,9 +37,11 @@ interface ToolbarCallbacks {
   onScreenshotRequest?: () => void;
   onBackendRequest?: () => void;
   onBackendSelect?: (backend: string) => void;
-  onAnnotateTool?: (tool: AnnotationTool) => void;
+  onAnnotateTool?: (tool: ToolbarAnnotationTool) => void;
   onAnnotateColor?: (color: string) => void;
   onAnnotateUndo?: () => void;
+  onAnnotateRedo?: () => void;
+  onAnnotateDelete?: () => void;
   onAnnotateClear?: () => void;
   onAnnotateSend?: (prompt: string) => void;
   onAnnotateDismiss?: () => void;
@@ -49,6 +54,7 @@ export interface ToolbarAPI {
   setInspectActive(active: boolean): void;
   setAddElementActive(active: boolean): void;
   setAnnotateActive(active: boolean): void;
+  setAnnotateDeleteEnabled(enabled: boolean): void;
   setBackendState(active: string, available: Record<string, boolean>): void;
   setStorageDataState(enabled: boolean, hasData: boolean): void;
   setRecordActive(active: boolean): void;
@@ -70,9 +76,12 @@ export function createToolbar(
     recordActive: false,
   };
 
-  let activeAnnotationTool: AnnotationTool = 'pen';
+  let activeAnnotationTool: ToolbarAnnotationTool = 'pen';
   let activeAnnotationColor = '#ff3b30';
-  const annotationTools: AnnotationTool[] = ['pen', 'arrow', 'rect', 'ellipse', 'text', 'callout'];
+  let annotateDeleteEnabled = false;
+  const annotationTools: ToolbarAnnotationTool[] = ['select', 'pen', 'arrow', 'rect', 'ellipse', 'text', 'callout'];
+  const annotationToolSet = new Set<string>(annotationTools);
+  const isToolbarAnnotationTool = (value: string): value is ToolbarAnnotationTool => annotationToolSet.has(value);
   const annotationColors = ['#ff3b30', '#ff4d4f', '#ffd60a', '#34c759', '#0a84ff', '#bf5af2'];
 
   let recordOpts: RecordOptions = {
@@ -160,7 +169,7 @@ export function createToolbar(
             View Storage Data
           </button>
           <div class="overflow-menu-separator"></div>
-          <div class="overflow-menu-version">v${__EXTENSION_VERSION__}</div>
+          <div class="overflow-menu-version">v${extensionVersion}</div>
         </div>
       </div>
     </div>
@@ -191,6 +200,8 @@ export function createToolbar(
     </div>
     <div class="annotation-strip-section annotation-actions">
       <button class="annotation-control" id="annotation-undo" type="button">Undo</button>
+      <button class="annotation-control" id="annotation-redo" type="button">Redo</button>
+      <button class="annotation-control" id="annotation-delete" type="button">Delete</button>
       <button class="annotation-control" id="annotation-clear" type="button">Clear</button>
     </div>
     <div class="annotation-strip-section annotation-compose">
@@ -224,6 +235,8 @@ export function createToolbar(
   const backendIconDark = container.querySelector('#backend-icon-dark') as HTMLImageElement;
   const backendIconClipboard = container.querySelector('#backend-icon-clipboard') as HTMLElement;
   const annotationPrompt = annotationStrip.querySelector('#annotation-prompt') as HTMLInputElement;
+  const annotationDeleteButton = annotationStrip.querySelector('#annotation-delete') as HTMLButtonElement;
+  annotationDeleteButton.disabled = true;
 
   // Read icon URIs from the hidden data element
   const iconData = document.getElementById('backend-icons');
@@ -265,6 +278,7 @@ export function createToolbar(
     annotationStrip.querySelectorAll<HTMLElement>('[data-annotate-color]').forEach((item) => {
       item.classList.toggle('active', item.dataset.annotateColor === activeAnnotationColor);
     });
+    annotationDeleteButton.disabled = !annotateDeleteEnabled;
   }
 
   // ── Navigation ─────────────────────────────────────────────
@@ -337,7 +351,12 @@ export function createToolbar(
 
   annotationStrip.querySelectorAll<HTMLButtonElement>('[data-annotate-tool]').forEach((button) => {
     button.addEventListener('click', () => {
-      activeAnnotationTool = button.dataset.annotateTool as AnnotationTool;
+      const nextTool = button.dataset.annotateTool;
+      if (!nextTool || !isToolbarAnnotationTool(nextTool)) {
+        return;
+      }
+
+      activeAnnotationTool = nextTool;
       updateAnnotationControls();
       callbacks?.onAnnotateTool?.(activeAnnotationTool);
     });
@@ -353,6 +372,14 @@ export function createToolbar(
 
   annotationStrip.querySelector('#annotation-undo')?.addEventListener('click', () => {
     callbacks?.onAnnotateUndo?.();
+  });
+
+  annotationStrip.querySelector('#annotation-redo')?.addEventListener('click', () => {
+    callbacks?.onAnnotateRedo?.();
+  });
+
+  annotationStrip.querySelector('#annotation-delete')?.addEventListener('click', () => {
+    callbacks?.onAnnotateDelete?.();
   });
 
   annotationStrip.querySelector('#annotation-clear')?.addEventListener('click', () => {
@@ -635,6 +662,11 @@ export function createToolbar(
       state.annotateActive = active;
       if (active) clearOtherModes('annotate');
       updateModeUI();
+    },
+
+    setAnnotateDeleteEnabled(enabled: boolean) {
+      annotateDeleteEnabled = enabled;
+      updateAnnotationControls();
     },
 
     setBackendState(active: string, available: Record<string, boolean>) {

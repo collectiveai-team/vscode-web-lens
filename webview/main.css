@@ -321,6 +321,15 @@ body {
   background: rgba(0, 122, 204, 0.15);
 }
 
+.annotation-control:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#annotation-delete {
+  min-width: 64px;
+}
+
 .annotation-color {
   width: 28px;
   padding: 0;
