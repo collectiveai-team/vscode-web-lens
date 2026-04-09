@@ -80,11 +80,12 @@ async function main() {
       format: 'iife',
       platform: 'browser',
       target: 'es2022',
-      define: {
-        __EXTENSION_VERSION__: JSON.stringify(pkg.version),
-      },
       plugins: [makeNotifyPlugin()],
       ...shared,
+      define: {
+        ...(shared.define || {}),
+        __EXTENSION_VERSION__: JSON.stringify(pkg.version),
+      },
     },
     {
       entryPoints: ['./src/webview/inject.ts'],
