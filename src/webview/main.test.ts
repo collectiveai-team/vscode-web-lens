@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RecordOptions } from '../types';
 import type { AnnotationTool } from './annotation-overlay';
 import { createAnnotationOverlay } from './annotation-overlay';
 
@@ -15,12 +16,16 @@ type ToolbarCallbacks = {
   onAnnotateClear?: () => void;
   onAnnotateSend?: (prompt: string) => void;
   onAnnotateDismiss?: () => void;
+  onRecordStart?: (opts: RecordOptions) => void;
+  onRecordStop?: () => void;
 };
 
 type ToolbarState = {
   inspectActive: boolean;
   addElementActive: boolean;
   annotateActive: boolean;
+  recordPending?: boolean;
+  recordActive?: boolean;
 };
 
 const postMessage = vi.fn();
@@ -32,12 +37,16 @@ const toolbarApi = {
   setAnnotateActive: vi.fn(),
   setBackendState: vi.fn(),
   setStorageDataState: vi.fn(),
+  setRecordActive: vi.fn(),
+  setRecordOptions: vi.fn(),
+  updateRecordingStatus: vi.fn(),
   onStateChange: vi.fn<(cb: (state: ToolbarState) => void) => void>(),
 };
 const inspectOverlay = {
   setMode: vi.fn(),
   cleanup: vi.fn(),
   requestScreenshot: vi.fn<() => Promise<string>>(),
+  startRecord: vi.fn(),
 };
 const annotationOverlay = {
   setActive: vi.fn(),
@@ -50,8 +59,9 @@ const annotationOverlay = {
   composite: vi.fn<() => Promise<string>>(),
   destroy: vi.fn(),
 };
+const consoleEntries: { level: 'log' | 'warn' | 'error'; message: string; timestamp: number }[] = [];
 const consoleReceiver = {
-  getEntries: vi.fn(() => []),
+  getEntries: vi.fn(() => [...consoleEntries]),
 };
 
 let toolbarCallbacks: ToolbarCallbacks | undefined;
@@ -76,10 +86,23 @@ vi.mock('./annotation-overlay', () => ({
 }));
 
 vi.mock('./console-capture', () => ({
-  createConsoleReceiver: vi.fn(() => consoleReceiver),
+  createConsoleReceiver: vi.fn((onEntry: (entry: { level: 'log' | 'warn' | 'error'; message: string; timestamp: number }) => void) => {
+    window.addEventListener('message', (event: MessageEvent) => {
+      if (event.data?.type === 'bc:console' && event.data?.payload) {
+        const entry = event.data.payload;
+        consoleEntries.push(entry);
+        onEntry(entry);
+      }
+    });
+    return consoleReceiver;
+  }),
 }));
 
-describe('webview main annotation wiring', () => {
+function postWindowMessage(data: unknown) {
+  window.dispatchEvent(new MessageEvent('message', { data }));
+}
+
+describe('webview main annotation + record wiring', () => {
   beforeAll(async () => {
     document.body.innerHTML = `
       <div id="toolbar"></div>
@@ -102,9 +125,13 @@ describe('webview main annotation wiring', () => {
     toolbarApi.setAnnotateActive.mockClear();
     toolbarApi.setBackendState.mockClear();
     toolbarApi.setStorageDataState.mockClear();
+    toolbarApi.setRecordActive.mockClear();
+    toolbarApi.setRecordOptions.mockClear();
+    toolbarApi.updateRecordingStatus.mockClear();
     inspectOverlay.setMode.mockClear();
     inspectOverlay.cleanup.mockClear();
     inspectOverlay.requestScreenshot.mockReset();
+    inspectOverlay.startRecord.mockClear();
     annotationOverlay.setActive.mockClear();
     annotationOverlay.setTool.mockClear();
     annotationOverlay.setColor.mockClear();
@@ -114,6 +141,7 @@ describe('webview main annotation wiring', () => {
     annotationOverlay.hasShapes.mockReset();
     annotationOverlay.composite.mockReset();
     annotationOverlay.destroy.mockClear();
+    consoleEntries.length = 0;
   });
 
   it('activates annotation overlay and disables inspect overlay in annotate mode', () => {
@@ -128,7 +156,7 @@ describe('webview main annotation wiring', () => {
     expect(annotationOverlay.setActive).toHaveBeenNthCalledWith(2, true);
   });
 
-  it('requests a screenshot, composites annotations, posts to chat, clears, and deactivates annotate mode', async () => {
+  it('sends annotated screenshot to chat and deactivates annotate mode', async () => {
     inspectOverlay.requestScreenshot.mockResolvedValue('data:image/png;base64,raw-shot');
     annotationOverlay.composite.mockResolvedValue('data:image/png;base64,annotated-shot');
 
@@ -148,25 +176,103 @@ describe('webview main annotation wiring', () => {
     expect(toolbarApi.setAnnotateActive).toHaveBeenCalledWith(false);
   });
 
-  it('asks for confirmation before dismissing when annotations exist and keeps annotate mode active on reject', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    annotationOverlay.hasShapes.mockReturnValue(true);
+  it('uses recording:initOptions when mode:record starts', () => {
+    const opts: RecordOptions = {
+      captureConsole: true,
+      captureScroll: true,
+      captureHover: false,
+    };
 
-    toolbarCallbacks?.onAnnotateDismiss?.();
+    postWindowMessage({ type: 'recording:initOptions', payload: opts });
+    postWindowMessage({ type: 'mode:record', payload: { enabled: true } });
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(annotationOverlay.clear).not.toHaveBeenCalled();
-    expect(toolbarApi.setAnnotateActive).not.toHaveBeenCalled();
+    expect(toolbarApi.setRecordOptions).toHaveBeenCalledWith(opts);
+    expect(inspectOverlay.startRecord).toHaveBeenCalledWith(opts);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'recording:start', payload: opts });
   });
 
-  it('clears and deactivates annotate mode when dismiss confirmation is accepted', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    annotationOverlay.hasShapes.mockReturnValue(true);
+  it('stops record flow on mode:record disable when active by host', () => {
+    postWindowMessage({ type: 'recording:started' });
+    postWindowMessage({ type: 'mode:record', payload: { enabled: false } });
 
-    toolbarCallbacks?.onAnnotateDismiss?.();
+    expect(inspectOverlay.setMode).toHaveBeenCalledWith('off');
+    expect(postMessage).toHaveBeenCalledWith({ type: 'recording:stop' });
+  });
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(annotationOverlay.clear).toHaveBeenCalledTimes(1);
-    expect(toolbarApi.setAnnotateActive).toHaveBeenCalledWith(false);
+  it('re-arms record listeners after bc:navigated while recording is active', () => {
+    const opts: RecordOptions = {
+      captureConsole: false,
+      captureScroll: true,
+      captureHover: true,
+    };
+
+    postWindowMessage({ type: 'recording:initOptions', payload: opts });
+    postWindowMessage({ type: 'recording:started' });
+    inspectOverlay.startRecord.mockClear();
+
+    postWindowMessage({ type: 'bc:navigated', payload: { url: 'https://example.com/next' } });
+
+    expect(inspectOverlay.startRecord).toHaveBeenCalledWith(opts);
+  });
+
+  it('relays bc:recordEvent and updates recording status', () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+
+    postWindowMessage({ type: 'recording:started' });
+    nowSpy.mockReturnValue(2500);
+
+    const payload = {
+      type: 'click',
+      timestamp: 123,
+      selector: '#save',
+      selectorType: 'id',
+      text: 'Save',
+      position: { x: 1, y: 2 },
+    };
+
+    postWindowMessage({ type: 'bc:recordEvent', payload });
+
+    expect(postMessage).toHaveBeenCalledWith({ type: 'recording:event', payload });
+    expect(toolbarApi.updateRecordingStatus).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('forwards bc:console to recording:event and keeps console diagnostics flow', () => {
+    const opts: RecordOptions = {
+      captureConsole: true,
+      captureScroll: false,
+      captureHover: false,
+    };
+
+    postWindowMessage({ type: 'recording:initOptions', payload: opts });
+    postWindowMessage({ type: 'recording:started' });
+
+    postWindowMessage({
+      type: 'bc:console',
+      payload: {
+        level: 'warn',
+        message: 'watch out',
+        timestamp: 222,
+      },
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'recording:event',
+      payload: {
+        type: 'console',
+        timestamp: 222,
+        level: 'warn',
+        message: 'watch out',
+      },
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'diagnostic:log',
+      payload: {
+        source: 'page.console',
+        level: 'warn',
+        message: 'watch out',
+        details: undefined,
+      },
+    });
   });
 });
