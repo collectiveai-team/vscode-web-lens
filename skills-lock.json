@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-md-refactor": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "51c53259bba830ebad6741b2ab69d213d5a4d02835f7f27925a0e4e93515fc22"
+    },
+    "crafting-effective-readmes": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "c931a8c22160e8925400778fcb2266b5d1df762f3052edba65f72479f79f2d6c"
+    },
+    "vscode-bug-hunter": {
+      "source": "s-hiraoku/vscode-sidebar-terminal",
+      "sourceType": "github",
+      "computedHash": "a6a3a2aa3d58ec5334a777a34034427584888842ac64c0ee385f2099271e027d"
+    },
+    "vscode-extension-debugger": {
+      "source": "s-hiraoku/vscode-sidebar-terminal",
+      "sourceType": "github",
+      "computedHash": "48aa8410cbf86c17d62300623af5855d75c7eb515413c5bd8e5bbd9f0ae90a5b"
+    },
+    "vscode-extension-refactorer": {
+      "source": "s-hiraoku/vscode-sidebar-terminal",
+      "sourceType": "github",
+      "computedHash": "0c3615e4f0710e77eb7366c8756cb6ce01b9f53e606fadbf1a04c4cb52585a9f"
+    },
+    "vscode-tdd-expert": {
+      "source": "s-hiraoku/vscode-sidebar-terminal",
+      "sourceType": "github",
+      "computedHash": "c3e3f44ec4bf6c293e6d8a0bcc02627bc4db0efa7d071ba9610592601529f2b9"
+    },
+    "vscode-test-setup": {
+      "source": "s-hiraoku/vscode-sidebar-terminal",
+      "sourceType": "github",
+      "computedHash": "62d445997c862c328cf7fdae92f92f962f9ecd71b1f0b83f9eaac554b3809dbd"
+    },
+    "writing-clearly-and-concisely": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "136a0413255aa82d800459c775eabf041620b2e9cbf2d713b739bf1b87a3db3a"
+    }
+  }
+}
