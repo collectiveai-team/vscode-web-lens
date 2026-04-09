@@ -7,6 +7,8 @@ import {
   getRecordConfigBannerHtml,
 } from './toolbarDiagnostics';
 
+declare const __EXTENSION_VERSION__: string;
+
 type PostMessage = (msg: WebviewMessage) => void;
 
 interface ToolbarState {
@@ -157,6 +159,8 @@ export function createToolbar(
             <span class="material-symbols-outlined">manage_search</span>
             View Storage Data
           </button>
+          <div class="overflow-menu-separator"></div>
+          <div class="overflow-menu-version">v${__EXTENSION_VERSION__}</div>
         </div>
       </div>
     </div>
