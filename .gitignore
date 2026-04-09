@@ -14,3 +14,4 @@ docs/superpowers/*
 .dolt/
 *.db
 .beads-credential-key
+.vscode/settings.json

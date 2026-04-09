@@ -8,6 +8,8 @@ describe('createAnnotationOverlay', () => {
   let iframe: HTMLIFrameElement;
   const OriginalImage = globalThis.Image;
   const loadedImageSources: string[] = [];
+  const originalCreateSVGPoint = SVGSVGElement.prototype.createSVGPoint;
+  const originalGetScreenCTM = SVGSVGElement.prototype.getScreenCTM;
 
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -17,6 +19,38 @@ describe('createAnnotationOverlay', () => {
     iframe.id = 'browser-iframe';
     host.appendChild(iframe);
     document.body.appendChild(host);
+
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+
+    // jsdom does not implement SVG geometry APIs used for coordinate transforms;
+    // install minimal stubs so getPoint() and svgPointToCss() work in tests.
+    const identityMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 } as unknown as DOMMatrix;
+    (identityMatrix as unknown as { inverse(): DOMMatrix }).inverse = () => identityMatrix;
+
+    const makeSvgPoint = (x = 0, y = 0): SVGPoint => {
+      const pt = {
+        x,
+        y,
+        matrixTransform(m: DOMMatrix) {
+          return makeSvgPoint(
+            (m as unknown as { a: number; c: number; e: number }).a * pt.x +
+              (m as unknown as { c: number }).c * pt.y +
+              (m as unknown as { e: number }).e,
+            (m as unknown as { b: number }).b * pt.x +
+              (m as unknown as { d: number }).d * pt.y +
+              (m as unknown as { f: number }).f,
+          );
+        },
+      } as unknown as SVGPoint;
+      return pt;
+    };
+
+    SVGSVGElement.prototype.createSVGPoint = () => makeSvgPoint();
+    SVGSVGElement.prototype.getScreenCTM = () => identityMatrix;
 
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       fillStyle: '',
@@ -42,6 +76,10 @@ describe('createAnnotationOverlay', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     globalThis.Image = OriginalImage;
+    // @ts-expect-error - cleanup jsdom global mock
+    delete globalThis.ResizeObserver;
+    SVGSVGElement.prototype.createSVGPoint = originalCreateSVGPoint;
+    SVGSVGElement.prototype.getScreenCTM = originalGetScreenCTM;
   });
 
   it('inserts an SVG overlay into the iframe parent and toggles active pointer events', () => {

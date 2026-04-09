@@ -119,6 +119,17 @@ export function createAnnotationOverlay(
   svg.appendChild(defs);
   host.appendChild(svg);
 
+  const iframeEl = iframe as HTMLIFrameElement;
+
+  function updateViewBox() {
+    const w = Math.max(iframeEl.clientWidth, 1);
+    const h = Math.max(iframeEl.clientHeight, 1);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  }
+
+  const resizeObserver = new ResizeObserver(updateViewBox);
+  resizeObserver.observe(iframeEl);
+
   let active = false;
   let tool: AnnotationTool = 'pen';
   let color = '#ff3b30';
@@ -1052,20 +1063,33 @@ export function createAnnotationOverlay(
     };
   }
 
+  function svgPointToCss(point: Point): Point {
+    const pt = svg.createSVGPoint();
+    pt.x = point.x;
+    pt.y = point.y;
+    const screenPt = pt.matrixTransform(svg.getScreenCTM()!);
+    const hostRect = host.getBoundingClientRect();
+    return { x: screenPt.x - hostRect.left, y: screenPt.y - hostRect.top };
+  }
+
   function showEditor(point: Point, onCommit: (value: string) => void) {
     removeEditor();
 
+    const cssPoint = svgPointToCss(point);
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = 'Type and press Enter';
     input.style.position = 'absolute';
-    input.style.left = `${point.x}px`;
-    input.style.top = `${point.y}px`;
+    input.style.left = `${cssPoint.x}px`;
+    input.style.top = `${cssPoint.y}px`;
     input.style.zIndex = '3';
     host.appendChild(input);
     editor = input;
 
+    let finished = false;
     const finish = (commit: boolean) => {
+      if (finished) return;
+      finished = true;
       const value = input.value.trim();
       removeEditor();
       if (commit && value) {
@@ -1077,9 +1101,11 @@ export function createAnnotationOverlay(
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
+        event.stopPropagation();
         finish(true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopPropagation();
         finish(false);
       }
     });
@@ -1416,13 +1442,14 @@ export function createAnnotationOverlay(
     },
 
     destroy() {
+      resizeObserver.disconnect();
       svg.removeEventListener('mousedown', handleMouseDown);
       svg.removeEventListener('mousemove', handleMouseMove);
       svg.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mouseup', handleWindowMouseUp);
       cancelDraft();
       removeEditor();
-      iframe.style.pointerEvents = 'auto';
+      iframeEl.style.pointerEvents = 'auto';
       svg.remove();
     },
   };
@@ -1540,11 +1567,11 @@ export function createAnnotationOverlay(
 }
 
 function getPoint(event: MouseEvent, svg: SVGSVGElement): Point {
-  const rect = svg.getBoundingClientRect();
-  return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
-  };
+  const pt = svg.createSVGPoint();
+  pt.x = event.clientX;
+  pt.y = event.clientY;
+  const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+  return { x: svgPt.x, y: svgPt.y };
 }
 
 function toNumber(value: string | null) {
