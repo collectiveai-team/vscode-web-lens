@@ -1,3 +1,4 @@
+const pkg = require('./package.json');
 const esbuild = require('esbuild');
 const http = require('http');
 const path = require('path');
@@ -79,6 +80,9 @@ async function main() {
       format: 'iife',
       platform: 'browser',
       target: 'es2022',
+      define: {
+        __EXTENSION_VERSION__: JSON.stringify(pkg.version),
+      },
       plugins: [makeNotifyPlugin()],
       ...shared,
     },
