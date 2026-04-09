@@ -75,6 +75,12 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
   onAnnotateUndo() {
     annotationOverlay.undo();
   },
+  onAnnotateRedo() {
+    annotationOverlay.redo();
+  },
+  onAnnotateDelete() {
+    annotationOverlay.deleteSelection?.();
+  },
   onAnnotateClear() {
     if (annotationOverlay.hasShapes()) {
       annotationOverlay.clear();
@@ -116,7 +122,11 @@ const iframe = document.getElementById('browser-iframe') as HTMLIFrameElement;
 
 // ── Initialize inspect overlay (message relay) ──────────────
 const overlay = createInspectOverlay(iframe, postMessage);
-const annotationOverlay = createAnnotationOverlay(iframe);
+const annotationOverlay = createAnnotationOverlay(iframe, {
+  onSelectionChange(hasSelection) {
+    toolbar.setAnnotateDeleteEnabled(hasSelection);
+  },
+});
 
 // Sync toolbar state changes with overlay mode
 toolbar.onStateChange((state) => {

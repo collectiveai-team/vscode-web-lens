@@ -30,6 +30,12 @@ function setup(callbacks?: Parameters<typeof createToolbar>[2]) {
 }
 
 describe('createToolbar annotate mode', () => {
+  it('renders a fallback extension version in the overflow menu when no define is injected', () => {
+    const { container } = setup();
+    const version = container.querySelector('.overflow-menu-version');
+    expect(version?.textContent?.trim()).toBe('v0.0.0');
+  });
+
   it('toggles annotate mode from the toolbar button', () => {
     const { toolbar, container, shell } = setup();
 
@@ -107,6 +113,39 @@ describe('createToolbar annotate mode', () => {
     expect(callbacks.onAnnotateClear).toHaveBeenCalledTimes(1);
     expect(callbacks.onAnnotateSend).toHaveBeenCalledWith('Explain the visual bug');
     expect(callbacks.onAnnotateDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders select/delete/redo controls and triggers callbacks', () => {
+    const callbacks = {
+      onAnnotateTool: vi.fn(),
+      onAnnotateRedo: vi.fn(),
+      onAnnotateDelete: vi.fn(),
+    };
+
+    const { toolbar, shell } = setup(callbacks);
+    toolbar.setAnnotateActive(true);
+    toolbar.setAnnotateDeleteEnabled(true);
+
+    (shell.querySelector('[data-annotate-tool="select"]') as HTMLButtonElement).click();
+    (shell.querySelector('#annotation-redo') as HTMLButtonElement).click();
+    (shell.querySelector('#annotation-delete') as HTMLButtonElement).click();
+
+    expect(callbacks.onAnnotateTool).toHaveBeenCalledWith('select');
+    expect(callbacks.onAnnotateRedo).toHaveBeenCalledTimes(1);
+    expect(callbacks.onAnnotateDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables and disables delete button through toolbar API', () => {
+    const { toolbar, shell } = setup();
+    const deleteButton = shell.querySelector('#annotation-delete') as HTMLButtonElement;
+
+    expect(deleteButton.disabled).toBe(true);
+
+    toolbar.setAnnotateDeleteEnabled(true);
+    expect(deleteButton.disabled).toBe(false);
+
+    toolbar.setAnnotateDeleteEnabled(false);
+    expect(deleteButton.disabled).toBe(true);
   });
 
   it('leaves annotate mode active until dismiss is confirmed by the caller', () => {
