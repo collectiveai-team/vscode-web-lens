@@ -83,6 +83,15 @@ export function createToolbar(
   const annotationToolSet = new Set<string>(annotationTools);
   const isToolbarAnnotationTool = (value: string): value is ToolbarAnnotationTool => annotationToolSet.has(value);
   const annotationColors = ['#ff3b30', '#ff4d4f', '#ffd60a', '#34c759', '#0a84ff', '#bf5af2'];
+  const ANNOTATION_TOOL_ICONS: Record<ToolbarAnnotationTool, string> = {
+    select: 'arrow_selector_tool',
+    pen: 'draw',
+    arrow: 'trending_flat',
+    rect: 'rectangle',
+    ellipse: 'circle',
+    text: 'text_fields',
+    callout: 'chat_bubble',
+  };
 
   let recordOpts: RecordOptions = {
     captureConsole: false,
@@ -187,9 +196,11 @@ export function createToolbar(
   annotationStrip.id = 'annotation-strip';
   annotationStrip.innerHTML = `
     <div class="annotation-strip-section annotation-tools">
-      ${annotationTools.map((tool) => `
-        <button class="annotation-control annotation-tool" type="button" data-annotate-tool="${tool}">${tool}</button>
-      `).join('')}
+      ${annotationTools.map((tool) => {
+        const label = tool.charAt(0).toUpperCase() + tool.slice(1);
+        const shortcut = tool === 'select' ? 'S' : tool === 'pen' ? 'P' : tool === 'arrow' ? 'A' : tool === 'rect' ? 'R' : tool === 'ellipse' ? 'E' : tool === 'text' ? 'T' : 'C';
+        return `<button class="annotation-control annotation-tool" type="button" data-annotate-tool="${tool}" title="${label} (${shortcut})"><span class="material-symbols-outlined">${ANNOTATION_TOOL_ICONS[tool as ToolbarAnnotationTool]}</span></button>`;
+      }).join('')}
     </div>
     <div class="annotation-strip-section annotation-colors">
       ${annotationColors.map((color) => `
@@ -199,15 +210,20 @@ export function createToolbar(
       `).join('')}
     </div>
     <div class="annotation-strip-section annotation-actions">
-      <button class="annotation-control" id="annotation-undo" type="button">Undo</button>
-      <button class="annotation-control" id="annotation-redo" type="button">Redo</button>
-      <button class="annotation-control" id="annotation-delete" type="button">Delete</button>
-      <button class="annotation-control" id="annotation-clear" type="button">Clear</button>
+      <button class="annotation-control" id="annotation-undo" type="button" title="Undo (Ctrl+Z)"><span class="material-symbols-outlined">undo</span></button>
+      <button class="annotation-control" id="annotation-redo" type="button" title="Redo (Ctrl+Shift+Z)"><span class="material-symbols-outlined">redo</span></button>
+      <button class="annotation-control" id="annotation-delete" type="button" title="Delete (Del)"><span class="material-symbols-outlined">delete</span></button>
+      <button class="annotation-control" id="annotation-clear" type="button" title="Clear All"><span class="material-symbols-outlined">clear_all</span></button>
     </div>
     <div class="annotation-strip-section annotation-compose">
       <input id="annotation-prompt" class="annotation-prompt" type="text" placeholder="Add a note for chat" spellcheck="false" />
-      <button class="annotation-control annotation-send" id="annotation-send" type="button">Send</button>
-      <button class="annotation-control" id="annotation-dismiss" type="button">Dismiss</button>
+      <button class="annotation-control annotation-send" id="annotation-send" type="button" title="Send (Ctrl+Enter)"><span class="material-symbols-outlined">send</span></button>
+      <button class="annotation-control" id="annotation-dismiss" type="button" title="Dismiss"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="annotation-strip-confirm" id="annotation-confirm">
+      <span class="annotation-confirm-message">Discard annotations?</span>
+      <button class="annotation-control" id="annotation-confirm-keep" type="button">Keep editing</button>
+      <button class="annotation-control" id="annotation-confirm-discard" type="button">Discard</button>
     </div>
   `;
   container.parentElement?.insertBefore(annotationStrip, banner.nextSibling);
@@ -356,6 +372,7 @@ export function createToolbar(
         return;
       }
 
+      postMessage(createToolbarDiagnostic(`Annotation tool selected: ${nextTool}`));
       activeAnnotationTool = nextTool;
       updateAnnotationControls();
       callbacks?.onAnnotateTool?.(activeAnnotationTool);
@@ -480,6 +497,7 @@ export function createToolbar(
 
   // ── ESC key handler ───────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
+    postMessage(createToolbarDiagnostic(`Keydown: ${e.key} annotateActive=${state.annotateActive}`));
     if (e.key === 'Escape') {
       if (state.recordActive || state.recordPending) return;
 
