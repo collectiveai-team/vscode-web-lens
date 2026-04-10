@@ -86,6 +86,7 @@ type HistoryEntry =
 
 interface AnnotationOverlayOptions {
   onSelectionChange?: (hasSelection: boolean) => void;
+  log?: (message: string, details?: string) => void;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -97,6 +98,8 @@ export function createAnnotationOverlay(
   if (!(iframe instanceof HTMLIFrameElement) || !iframe.parentElement) {
     throw new Error('Expected #browser-iframe inside a parent element');
   }
+
+  const log = options.log ?? (() => {});
 
   const host = iframe.parentElement;
   if (!host.style.position) {
@@ -151,9 +154,14 @@ export function createAnnotationOverlay(
   let selectionUiNodes: SVGElement[] = [];
 
   const handleMouseDown = (event: MouseEvent) => {
-    if (!active || editor || event.button !== 0) return;
+    log(`mousedown on SVG tool=${tool} active=${active} editor=${!!editor} button=${event.button}`);
+    if (!active || editor || event.button !== 0) {
+      log(`mousedown BLOCKED active=${active} editor=${!!editor} button=${event.button}`);
+      return;
+    }
 
     const point = getPoint(event, svg);
+    log(`mousedown point: ${point.x.toFixed(1)},${point.y.toFixed(1)}`);
 
     if (tool === 'select') {
       handleSelectMouseDown(event, point);
@@ -163,7 +171,10 @@ export function createAnnotationOverlay(
     origin = point;
 
     if (tool === 'text') {
+      event.preventDefault();
+      log(`text tool: calling showEditor at ${point.x.toFixed(1)},${point.y.toFixed(1)}`);
       showEditor(point, (value) => {
+        log(`text onCommit value=${JSON.stringify(value)}`);
         if (!value) return;
         const text = document.createElementNS(SVG_NS, 'text');
         text.setAttribute('x', String(point.x));
@@ -172,12 +183,14 @@ export function createAnnotationOverlay(
         text.setAttribute('font-size', '16');
         text.textContent = value;
         commitShape(text, 'text');
+        log('text shape committed');
       });
       origin = null;
       return;
     }
 
     if (tool === 'callout') {
+      event.preventDefault();
       const number = String(calloutCounter);
       showEditor(point, (value) => {
         if (!value) return;
@@ -1073,9 +1086,17 @@ export function createAnnotationOverlay(
   }
 
   function showEditor(point: Point, onCommit: (value: string) => void) {
+    log(`showEditor at SVG point ${point.x.toFixed(1)},${point.y.toFixed(1)}`);
     removeEditor();
 
-    const cssPoint = svgPointToCss(point);
+    let cssPoint: Point;
+    try {
+      cssPoint = svgPointToCss(point);
+      log(`showEditor cssPoint: ${cssPoint.x.toFixed(1)},${cssPoint.y.toFixed(1)}`);
+    } catch (err) {
+      log(`showEditor svgPointToCss FAILED: ${err}`);
+      return;
+    }
     const input = document.createElement('input');
     input.type = 'text';
     input.placeholder = 'Type and press Enter';
@@ -1083,11 +1104,25 @@ export function createAnnotationOverlay(
     input.style.left = `${cssPoint.x}px`;
     input.style.top = `${cssPoint.y}px`;
     input.style.zIndex = '3';
+    input.style.minWidth = '160px';
+    input.style.height = '28px';
+    input.style.padding = '0 8px';
+    input.style.border = '1px solid var(--vscode-input-border, #3c3c3c)';
+    input.style.borderRadius = '4px';
+    input.style.background = 'var(--vscode-input-background, #3c3c3c)';
+    input.style.color = 'var(--vscode-input-foreground, #cccccc)';
+    input.style.fontFamily = 'var(--vscode-font-family, system-ui, sans-serif)';
+    input.style.fontSize = '13px';
+    input.style.outline = 'none';
     host.appendChild(input);
     editor = input;
+    log(`showEditor: input appended to host, children=${host.children.length}`);
+    const rect = input.getBoundingClientRect();
+    log(`showEditor: input rect x=${rect.x} y=${rect.y} w=${rect.width} h=${rect.height}`);
 
     let finished = false;
     const finish = (commit: boolean) => {
+      log(`showEditor finish commit=${commit} finished=${finished} value=${JSON.stringify(input.value)}`);
       if (finished) return;
       finished = true;
       const value = input.value.trim();
@@ -1097,23 +1132,35 @@ export function createAnnotationOverlay(
       }
     };
 
-    input.addEventListener('blur', () => finish(true), { once: true });
     input.addEventListener('keydown', (event) => {
+      // Always stop propagation so the document-level annotation shortcuts
+      // (tool keys, color digits, Delete/Backspace, Ctrl+Z, etc.) never fire
+      // while the user is typing in the inline editor.
+      event.stopPropagation();
       if (event.key === 'Enter') {
         event.preventDefault();
-        event.stopPropagation();
         finish(true);
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        event.stopPropagation();
         finish(false);
       }
     });
 
-    input.focus();
+    // Defer focus + blur listener to next frame so the mousedown event's
+    // native focus mechanics settle before we hand focus to the input.
+    requestAnimationFrame(() => {
+      if (finished) return;
+      input.focus();
+      log(`showEditor: focus() called, activeElement===input: ${document.activeElement === input}`);
+      input.addEventListener('blur', () => {
+        log('showEditor: input blur event');
+        finish(true);
+      }, { once: true });
+    });
   }
 
   function removeEditor() {
+    log(`removeEditor called, editor exists=${!!editor}`);
     if (!editor) return;
     editor.remove();
     editor = null;
@@ -1314,6 +1361,7 @@ export function createAnnotationOverlay(
 
   return {
     setActive(nextActive) {
+      log(`setActive ${nextActive} (was ${active}) pointerEvents=${nextActive ? 'auto' : 'none'}`);
       active = nextActive;
       if (!active) {
         cancelDraft();
@@ -1328,6 +1376,7 @@ export function createAnnotationOverlay(
     },
 
     setTool(nextTool) {
+      log(`setTool ${nextTool} (was ${tool})`);
       if (tool !== nextTool) {
         cancelDraft();
       }

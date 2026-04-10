@@ -15,3 +15,4 @@ docs/superpowers/*
 *.db
 .beads-credential-key
 .vscode/settings.json
+.tmp

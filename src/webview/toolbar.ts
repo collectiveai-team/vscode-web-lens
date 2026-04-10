@@ -549,6 +549,11 @@ export function createToolbar(
     if (!state.annotateActive) return;
 
     const inPrompt = document.activeElement === annotationPrompt;
+    // Also treat any focused input/textarea as a typing context (e.g. the
+    // inline text/callout editor created by annotation-overlay.ts).
+    const inAnyInput =
+      document.activeElement instanceof HTMLInputElement ||
+      document.activeElement instanceof HTMLTextAreaElement;
 
     // ── Escape: two-step confirm ──────────────────────────────
     if (e.key === 'Escape') {
@@ -598,8 +603,8 @@ export function createToolbar(
       return;
     }
 
-    // ── Single-key shortcuts (blocked when typing in prompt) ─
-    if (inPrompt) return;
+    // ── Single-key shortcuts (blocked when typing in any input) ─
+    if (inAnyInput) return;
 
     if (toolKeys[e.key]) {
       e.preventDefault();

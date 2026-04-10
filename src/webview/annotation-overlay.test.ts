@@ -794,7 +794,7 @@ describe('createAnnotationOverlay', () => {
     expect(host.querySelector('input')).toBeNull();
   });
 
-  it('commits non-empty inline editor value on blur', () => {
+  it('commits non-empty inline editor value on blur', async () => {
     const overlay = createAnnotationOverlay();
     const svg = host.querySelector('svg') as SVGSVGElement;
 
@@ -803,6 +803,9 @@ describe('createAnnotationOverlay', () => {
 
     dispatchPointer(svg, 'mousedown', 12, 18);
     dispatchPointer(svg, 'mouseup', 12, 18);
+
+    // Flush the requestAnimationFrame that registers the blur listener
+    await new Promise((r) => requestAnimationFrame(r));
 
     const input = host.querySelector('input') as HTMLInputElement;
     input.value = 'Blur commit';
