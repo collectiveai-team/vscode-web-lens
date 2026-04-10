@@ -65,6 +65,7 @@ interface ToolbarCallbacks {
   onAnnotateClear?: () => void;
   onAnnotateSend?: (prompt: string) => void;
   onAnnotateDismiss?: () => void;
+  onAnnotateHasShapes?: () => boolean;
   onRecordStart?: (opts: RecordOptions) => void;
   onRecordStop?: () => void;
 }
@@ -99,6 +100,7 @@ export function createToolbar(
   let activeAnnotationTool: ToolbarAnnotationTool = 'pen';
   let activeAnnotationColor = '#ff3b30';
   let annotateDeleteEnabled = false;
+  let confirmPending = false;
   const annotationTools: ToolbarAnnotationTool[] = ['select', 'pen', 'arrow', 'rect', 'ellipse', 'text', 'callout'];
   const annotationToolSet = new Set<string>(annotationTools);
   const isToolbarAnnotationTool = (value: string): value is ToolbarAnnotationTool => annotationToolSet.has(value);
@@ -262,7 +264,20 @@ export function createToolbar(
   const backendIconClipboard = container.querySelector('#backend-icon-clipboard') as HTMLElement;
   const annotationPrompt = annotationStrip.querySelector('#annotation-prompt') as HTMLInputElement;
   const annotationDeleteButton = annotationStrip.querySelector('#annotation-delete') as HTMLButtonElement;
+  const annotationConfirmKeep = annotationStrip.querySelector('#annotation-confirm-keep') as HTMLButtonElement;
+  const annotationConfirmDiscard = annotationStrip.querySelector('#annotation-confirm-discard') as HTMLButtonElement;
   annotationDeleteButton.disabled = true;
+
+  annotationConfirmKeep.addEventListener('click', () => {
+    confirmPending = false;
+    annotationStrip.removeAttribute('data-confirm');
+  });
+
+  annotationConfirmDiscard.addEventListener('click', () => {
+    confirmPending = false;
+    annotationStrip.removeAttribute('data-confirm');
+    callbacks?.onAnnotateDismiss?.();
+  });
 
   // Read icon URIs from the hidden data element
   const iconData = document.getElementById('backend-icons');
@@ -505,25 +520,104 @@ export function createToolbar(
     overflowMenu.classList.remove('visible');
   });
 
-  // ── ESC key handler ───────────────────────────────────────
+  // ── Keyboard handler ──────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (state.annotateActive) {
       postMessage(createToolbarDiagnostic(`Keydown: ${e.key} annotateActive=${state.annotateActive}`));
     }
-    if (e.key === 'Escape') {
-      if (state.recordActive || state.recordPending) return;
 
-      if (state.annotateActive) {
-        postMessage(createToolbarDiagnostic('Escape pressed - annotate dismiss requested'));
-        callbacks?.onAnnotateDismiss?.();
-        return;
-      }
+    // Non-annotate Escape handling
+    if (e.key === 'Escape' && !state.annotateActive) {
+      if (state.recordActive || state.recordPending) return;
       state.inspectActive = false;
       state.addElementActive = false;
-      state.annotateActive = false;
       postMessage(createToolbarDiagnostic('Escape pressed - modes cleared'));
       updateModeUI();
       stateChangeCallback?.({ ...state });
+      return;
+    }
+
+    if (!state.annotateActive) return;
+
+    const inPrompt = document.activeElement === annotationPrompt;
+
+    // ── Escape: two-step confirm ──────────────────────────────
+    if (e.key === 'Escape') {
+      if (state.recordActive || state.recordPending) return;
+      if (confirmPending) {
+        // Second Escape — discard
+        confirmPending = false;
+        annotationStrip.removeAttribute('data-confirm');
+        postMessage(createToolbarDiagnostic('Escape (2nd) pressed - annotate dismissed'));
+        callbacks?.onAnnotateDismiss?.();
+      } else if (callbacks?.onAnnotateHasShapes?.()) {
+        // First Escape with annotations — show confirm
+        confirmPending = true;
+        annotationStrip.setAttribute('data-confirm', '');
+        postMessage(createToolbarDiagnostic('Escape pressed - confirm shown'));
+      } else {
+        // No annotations — dismiss immediately
+        postMessage(createToolbarDiagnostic('Escape pressed - annotate dismiss (no shapes)'));
+        callbacks?.onAnnotateDismiss?.();
+      }
+      return;
+    }
+
+    // ── Modifier-key shortcuts (fire regardless of focus) ────
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        callbacks?.onAnnotateUndo?.();
+        return;
+      }
+      if (e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        callbacks?.onAnnotateRedo?.();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const prompt = annotationPrompt.value.trim();
+        callbacks?.onAnnotateSend?.(prompt);
+        return;
+      }
+      if (e.key === 'Backspace' && e.shiftKey) {
+        e.preventDefault();
+        callbacks?.onAnnotateClear?.();
+        return;
+      }
+      return;
+    }
+
+    // ── Single-key shortcuts (blocked when typing in prompt) ─
+    if (inPrompt) return;
+
+    const toolKeys: Record<string, ToolbarAnnotationTool> = {
+      s: 'select', p: 'pen', a: 'arrow', r: 'rect', e: 'ellipse', t: 'text', c: 'callout',
+    };
+    if (toolKeys[e.key]) {
+      e.preventDefault();
+      const tool = toolKeys[e.key];
+      activeAnnotationTool = tool;
+      updateAnnotationControls();
+      callbacks?.onAnnotateTool?.(tool);
+      return;
+    }
+
+    const colorIndex = parseInt(e.key, 10);
+    if (colorIndex >= 1 && colorIndex <= annotationColors.length) {
+      e.preventDefault();
+      const color = annotationColors[colorIndex - 1];
+      activeAnnotationColor = color;
+      updateAnnotationControls();
+      callbacks?.onAnnotateColor?.(color);
+      return;
+    }
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      callbacks?.onAnnotateDelete?.();
+      return;
     }
   });
 
@@ -691,6 +785,10 @@ export function createToolbar(
     setAnnotateActive(active: boolean) {
       state.annotateActive = active;
       if (active) clearOtherModes('annotate');
+      if (!active) {
+        confirmPending = false;
+        annotationStrip.removeAttribute('data-confirm');
+      }
       updateModeUI();
     },
 
