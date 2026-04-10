@@ -22,6 +22,7 @@ const mockState = vi.hoisted(() => ({
     postMessage: vi.fn(),
     open: vi.fn(),
     dispose: vi.fn(),
+    setTitle: vi.fn(),
   },
   clipboardAdapter: {
     isAvailable: vi.fn().mockResolvedValue(true),
