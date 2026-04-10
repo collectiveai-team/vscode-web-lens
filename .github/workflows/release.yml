@@ -40,12 +40,18 @@ jobs:
 
       - name: Bump version in package.json
         run: |
-          npm version ${{ steps.version.outputs.version }} --no-git-tag-version
+          CURRENT=$(node -p "require('./package.json').version")
+          TARGET="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
-          git push origin HEAD:main
+          if [ "$CURRENT" != "$TARGET" ]; then
+            npm version $TARGET --no-git-tag-version
+            git add package.json package-lock.json
+            git commit -m "chore: bump version to $TARGET"
+            git push origin HEAD:main
+          else
+            echo "package.json already at $TARGET, skipping commit"
+          fi
 
       - name: Build VSIX
         run: npm run build:prod && node_modules/.bin/vsce package --out web-lens-${{ steps.version.outputs.version }}.vsix
