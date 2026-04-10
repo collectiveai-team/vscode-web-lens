@@ -14,6 +14,26 @@ const extensionVersion = typeof __EXTENSION_VERSION__ === 'string' ? __EXTENSION
 type PostMessage = (msg: WebviewMessage) => void;
 type ToolbarAnnotationTool = AnnotationTool | 'select';
 
+const ANNOTATION_TOOL_ICONS: Record<ToolbarAnnotationTool, string> = {
+  select: 'arrow_selector_tool',
+  pen: 'draw',
+  arrow: 'trending_flat',
+  rect: 'rectangle',
+  ellipse: 'circle',
+  text: 'text_fields',
+  callout: 'chat_bubble',
+};
+
+const ANNOTATION_TOOL_SHORTCUTS: Record<ToolbarAnnotationTool, string> = {
+  select: 'S',
+  pen: 'P',
+  arrow: 'A',
+  rect: 'R',
+  ellipse: 'E',
+  text: 'T',
+  callout: 'C',
+};
+
 interface ToolbarState {
   inspectActive: boolean;
   addElementActive: boolean;
@@ -83,15 +103,6 @@ export function createToolbar(
   const annotationToolSet = new Set<string>(annotationTools);
   const isToolbarAnnotationTool = (value: string): value is ToolbarAnnotationTool => annotationToolSet.has(value);
   const annotationColors = ['#ff3b30', '#ff4d4f', '#ffd60a', '#34c759', '#0a84ff', '#bf5af2'];
-  const ANNOTATION_TOOL_ICONS: Record<ToolbarAnnotationTool, string> = {
-    select: 'arrow_selector_tool',
-    pen: 'draw',
-    arrow: 'trending_flat',
-    rect: 'rectangle',
-    ellipse: 'circle',
-    text: 'text_fields',
-    callout: 'chat_bubble',
-  };
 
   let recordOpts: RecordOptions = {
     captureConsole: false,
@@ -198,8 +209,7 @@ export function createToolbar(
     <div class="annotation-strip-section annotation-tools">
       ${annotationTools.map((tool) => {
         const label = tool.charAt(0).toUpperCase() + tool.slice(1);
-        const shortcut = tool === 'select' ? 'S' : tool === 'pen' ? 'P' : tool === 'arrow' ? 'A' : tool === 'rect' ? 'R' : tool === 'ellipse' ? 'E' : tool === 'text' ? 'T' : 'C';
-        return `<button class="annotation-control annotation-tool" type="button" data-annotate-tool="${tool}" title="${label} (${shortcut})"><span class="material-symbols-outlined">${ANNOTATION_TOOL_ICONS[tool as ToolbarAnnotationTool]}</span></button>`;
+        return `<button class="annotation-control annotation-tool" type="button" data-annotate-tool="${tool}" title="${label} (${ANNOTATION_TOOL_SHORTCUTS[tool as ToolbarAnnotationTool]})"><span class="material-symbols-outlined">${ANNOTATION_TOOL_ICONS[tool as ToolbarAnnotationTool]}</span></button>`;
       }).join('')}
     </div>
     <div class="annotation-strip-section annotation-colors">
@@ -497,7 +507,9 @@ export function createToolbar(
 
   // ── ESC key handler ───────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
-    postMessage(createToolbarDiagnostic(`Keydown: ${e.key} annotateActive=${state.annotateActive}`));
+    if (state.annotateActive) {
+      postMessage(createToolbarDiagnostic(`Keydown: ${e.key} annotateActive=${state.annotateActive}`));
+    }
     if (e.key === 'Escape') {
       if (state.recordActive || state.recordPending) return;
 
