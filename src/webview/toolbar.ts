@@ -225,7 +225,7 @@ export function createToolbar(
       <button class="annotation-control" id="annotation-undo" type="button" title="Undo (Ctrl+Z)"><span class="material-symbols-outlined">undo</span></button>
       <button class="annotation-control" id="annotation-redo" type="button" title="Redo (Ctrl+Shift+Z)"><span class="material-symbols-outlined">redo</span></button>
       <button class="annotation-control" id="annotation-delete" type="button" title="Delete (Del)"><span class="material-symbols-outlined">delete</span></button>
-      <button class="annotation-control" id="annotation-clear" type="button" title="Clear All"><span class="material-symbols-outlined">clear_all</span></button>
+      <button class="annotation-control" id="annotation-clear" type="button" title="Clear All (Ctrl+Shift+Backspace)"><span class="material-symbols-outlined">clear_all</span></button>
     </div>
     <div class="annotation-strip-section annotation-compose">
       <input id="annotation-prompt" class="annotation-prompt" type="text" placeholder="Add a note for chat" spellcheck="false" />
@@ -526,6 +526,10 @@ export function createToolbar(
   });
 
   // ── Keyboard handler ──────────────────────────────────────
+  const toolKeys: Record<string, ToolbarAnnotationTool> = {
+    s: 'select', p: 'pen', a: 'arrow', r: 'rect', e: 'ellipse', t: 'text', c: 'callout',
+  };
+
   document.addEventListener('keydown', (e: KeyboardEvent) => {
     if (state.annotateActive) {
       postMessage(createToolbarDiagnostic(`Keydown: ${e.key} annotateActive=${state.annotateActive}`));
@@ -597,9 +601,6 @@ export function createToolbar(
     // ── Single-key shortcuts (blocked when typing in prompt) ─
     if (inPrompt) return;
 
-    const toolKeys: Record<string, ToolbarAnnotationTool> = {
-      s: 'select', p: 'pen', a: 'arrow', r: 'rect', e: 'ellipse', t: 'text', c: 'callout',
-    };
     if (toolKeys[e.key]) {
       e.preventDefault();
       const tool = toolKeys[e.key];
