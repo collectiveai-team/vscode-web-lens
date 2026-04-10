@@ -318,7 +318,7 @@ window.addEventListener('message', async (event: MessageEvent) => {
       recordActiveByHost = false;
       recordCaptureConsole = false;
       toolbar.setRecordActive(false);
-      showToast(`Recording saved: ${msg.payload.filePath}`, 'success');
+      showToast(`Recording saved: ${msg.payload.filePath}`, 'success', 6000);
       break;
 
     case 'recording:initOptions':
@@ -379,13 +379,14 @@ function extractOriginalUrl(proxyUrl: string): string {
   return proxyUrl;
 }
 
-function showToast(message: string, toastType: 'success' | 'error') {
+function showToast(message: string, toastType: 'success' | 'error', durationMs = 2500) {
   const toast = document.createElement('div');
   toast.className = `toast ${toastType}`;
+  toast.style.animationDuration = `${durationMs}ms`;
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  setTimeout(() => toast.remove(), 2600);
+  setTimeout(() => toast.remove(), durationMs + 100);
 }
 
 function formatUnknown(value: unknown): string {

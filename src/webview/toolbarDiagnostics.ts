@@ -52,8 +52,13 @@ export function getRecordConfigBannerHtml(opts: RecordOptions): string {
       <input type="checkbox" data-record-opt="captureHover"${checked(opts.captureHover)} />
       Hover
     </label>
-    <button class="record-start-btn" data-record-start>&#9210; Start</button>
-    <button class="record-cancel-btn" data-record-cancel>&#x2715;</button>
+    <button class="annotation-control annotation-send record-start-btn" data-record-start>
+      <span class="material-symbols-outlined">radio_button_checked</span>
+      Start
+    </button>
+    <button class="annotation-control record-cancel-btn" data-record-cancel aria-label="Cancel recording">
+      <span class="material-symbols-outlined">close</span>
+    </button>
   `.trim();
 }
 
@@ -63,6 +68,9 @@ export function getRecordActiveBannerHtml(eventCount: number, elapsedSeconds: nu
   return `
     <span class="record-dot"></span>
     <span class="record-status-text">Recording&hellip; ${eventCount} event${eventCount !== 1 ? 's' : ''} &nbsp;|&nbsp; ${mins}:${secs}</span>
-    <button class="record-stop-btn" data-record-stop>&#9632; Stop &amp; Save</button>
+    <button class="annotation-control record-stop-btn" data-record-stop>
+      <span class="material-symbols-outlined">stop</span>
+      Stop &amp; Save
+    </button>
   `.trim();
 }

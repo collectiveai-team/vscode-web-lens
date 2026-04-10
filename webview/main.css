@@ -385,6 +385,49 @@ body {
   font-size: 13px;
 }
 
+/* ── Record banner ───────────────────────────────────────────── */
+
+.record-config-label {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 12px;
+  user-select: none;
+}
+
+.record-config-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.record-config-check input[type="checkbox"] {
+  accent-color: var(--vscode-focusBorder, #007acc);
+  cursor: pointer;
+}
+
+.record-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f14c4c;
+  flex-shrink: 0;
+  animation: record-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.record-status-text {
+  font-size: 12px;
+  color: var(--vscode-editor-foreground, #cccccc);
+  user-select: none;
+}
+
 /* ── Toast notifications ─────────────────────────────────────── */
 
 .toast {
@@ -397,7 +440,9 @@ body {
   font-size: 12px;
   z-index: 10000;
   pointer-events: none;
-  animation: toast-fade 2.5s ease forwards;
+  animation: toast-fade 2500ms ease forwards;
+  max-width: 80vw;
+  word-break: break-all;
 }
 
 .toast.success {

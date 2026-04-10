@@ -115,6 +115,7 @@ export function activate(context: vscode.ExtensionContext) {
     switch (message.type) {
       case 'iframe:loaded':
         currentUrl = message.payload.url;
+        panelManager?.setTitle(message.payload.title || 'WebLens');
         break;
       case 'iframe:error':
         webLensLogger.error('Iframe load error', message.payload);

@@ -45,7 +45,7 @@ export class BrowserPanelManager {
 
     const panel = vscode.window.createWebviewPanel(
       'webLens',
-      'Web Lens Debug',
+      'WebLens',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -86,6 +86,12 @@ export class BrowserPanelManager {
 
   postMessage(message: ExtensionMessage) {
     this.panel?.webview.postMessage(message);
+  }
+
+  setTitle(title: string) {
+    if (this.panel) {
+      this.panel.title = title.trim() || 'WebLens';
+    }
   }
 
   dispose() {
