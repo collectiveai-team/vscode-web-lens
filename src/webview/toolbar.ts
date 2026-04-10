@@ -565,12 +565,12 @@ export function createToolbar(
 
     // ── Modifier-key shortcuts (fire regardless of focus) ────
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'z' && !e.shiftKey) {
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
         callbacks?.onAnnotateUndo?.();
         return;
       }
-      if (e.key === 'z' && e.shiftKey) {
+      if (e.key.toLowerCase() === 'z' && e.shiftKey) {
         e.preventDefault();
         callbacks?.onAnnotateRedo?.();
         return;
