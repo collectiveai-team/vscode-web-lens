@@ -326,8 +326,9 @@ body {
   cursor: default;
 }
 
-#annotation-delete {
-  min-width: 64px;
+.annotation-actions .annotation-control {
+  min-width: 32px;
+  padding: 0 6px;
 }
 
 .annotation-color {
@@ -356,6 +357,32 @@ body {
 .annotation-send {
   background: var(--vscode-button-background, #0e639c);
   color: var(--vscode-button-foreground, #ffffff);
+}
+
+.annotation-control .material-symbols-outlined {
+  font-size: 18px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Confirm section — hidden by default, shown when data-confirm is set */
+.annotation-strip-confirm {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotation-strip[data-confirm] .annotation-strip-section {
+  display: none;
+}
+
+.annotation-strip[data-confirm] .annotation-strip-confirm {
+  display: flex;
+}
+
+.annotation-confirm-message {
+  color: var(--vscode-foreground, #cccccc);
+  font-size: 13px;
 }
 
 /* ── Toast notifications ─────────────────────────────────────── */
