@@ -95,18 +95,8 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
     deactivateAnnotateMode();
   },
   onAnnotateDismiss() {
-    postDiagnostic('info', 'webview.main', `onAnnotateDismiss called, hasShapes=${annotationOverlay.hasShapes()}`);
-    const hadShapes = annotationOverlay.hasShapes();
-    if (hadShapes && !window.confirm('Discard annotations?')) {
-      postDiagnostic('info', 'webview.main', 'onAnnotateDismiss: user cancelled confirm dialog');
-      return;
-    }
-
-    if (hadShapes) {
-      annotationOverlay.clear();
-    }
-
-    postDiagnostic('info', 'webview.main', 'onAnnotateDismiss: calling deactivateAnnotateMode');
+    postDiagnostic('info', 'webview.main', 'onAnnotateDismiss: clearing and deactivating');
+    annotationOverlay.clear();
     deactivateAnnotateMode();
   },
   onAnnotateHasShapes() {

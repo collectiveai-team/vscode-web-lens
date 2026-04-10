@@ -439,7 +439,12 @@ export function createToolbar(
   });
 
   annotationStrip.querySelector('#annotation-dismiss')?.addEventListener('click', () => {
-    callbacks?.onAnnotateDismiss?.();
+    if (callbacks?.onAnnotateHasShapes?.()) {
+      confirmPending = true;
+      annotationStrip.setAttribute('data-confirm', '');
+    } else {
+      callbacks?.onAnnotateDismiss?.();
+    }
   });
 
   // ── Action buttons ────────────────────────────────────────
