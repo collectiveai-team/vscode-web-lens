@@ -67,6 +67,7 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
     postMessage({ type: 'backend:select', payload: { backend } });
   },
   onAnnotateTool(tool) {
+    postDiagnostic('info', 'webview.main', `onAnnotateTool: ${tool}`);
     annotationOverlay.setTool(tool);
   },
   onAnnotateColor(color) {
@@ -94,8 +95,10 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
     deactivateAnnotateMode();
   },
   onAnnotateDismiss() {
+    postDiagnostic('info', 'webview.main', `onAnnotateDismiss called, hasShapes=${annotationOverlay.hasShapes()}`);
     const hadShapes = annotationOverlay.hasShapes();
     if (hadShapes && !window.confirm('Discard annotations?')) {
+      postDiagnostic('info', 'webview.main', 'onAnnotateDismiss: user cancelled confirm dialog');
       return;
     }
 
@@ -103,7 +106,11 @@ const toolbar = createToolbar(toolbarContainer, postMessage, {
       annotationOverlay.clear();
     }
 
+    postDiagnostic('info', 'webview.main', 'onAnnotateDismiss: calling deactivateAnnotateMode');
     deactivateAnnotateMode();
+  },
+  onAnnotateHasShapes() {
+    return annotationOverlay.hasShapes();
   },
   onRecordStart(opts) {
     lastRecordOpts = { ...opts };
@@ -125,6 +132,9 @@ const overlay = createInspectOverlay(iframe, postMessage);
 const annotationOverlay = createAnnotationOverlay(iframe, {
   onSelectionChange(hasSelection) {
     toolbar.setAnnotateDeleteEnabled(hasSelection);
+  },
+  log(message, details) {
+    postDiagnostic('info', 'webview.annotation', message, details);
   },
 });
 
