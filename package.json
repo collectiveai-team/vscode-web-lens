@@ -18,7 +18,6 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "onCommand:webLens.open",
     "onWebviewPanel:webLens"
   ],
   "contributes": {
