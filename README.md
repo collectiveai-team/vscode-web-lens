@@ -1,21 +1,37 @@
-<!-- <p align="center">
-  <img src="images/icon.png" alt="Web Lens for VS Code" width="128" />
-</p> -->
+<p align="center">
+  <img src="media/logo/weblens-logo-banner.png" alt="Web Lens for VS Code" style="width:600px; max-width:100%; height:auto;" />
+</p>
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/collectiveai-team.web-lens?label=Marketplace&logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=collectiveai-team.web-lens)
-[![VS Code](https://img.shields.io/badge/VS%20Code-^1.85.0-blue?logo=visualstudiocode)](https://code.visualstudio.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center">
+  <em>Inspect elements, annotate screenshots, record user flows, and capture console logs, all without leaving VS Code.</em>
+</p>
 
-Embedded browser for sending page context to AI coding agents — inspect elements, capture console logs, and take screenshots, all without leaving VS Code.
+<p align="center">
+  <a href="https://github.com/collectiveai-team/vscode-web-lens/releases"><img alt="Release" src="https://img.shields.io/github/v/release/collectiveai-team/vscode-web-lens?logo=github" /></a>
+  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS%20Code-^1.85.0-blue?logo=visualstudiocode" alt="VS Code"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
 
-## Features
+---
+**VS Code Marketplace**: [Web Lens](https://marketplace.visualstudio.com/items?itemName=collectiveai.web-lens) 
 
+**Source Code**: [https://github.com/collectiveai-team/vscode-web-lens](https://github.com/collectiveai-team/vscode-web-lens)
+
+
+---
+
+<!-- Embedded browser for sending page context to AI coding agents — inspect elements, annotate screenshots, record user flows, and capture console logs, all without leaving VS Code. -->
+WebLens is an embedded browser for sending page context to AI coding agents 
+
+The key features are:
 - **Embedded browser panel** — Browse your web app inside a VS Code tab with full navigation (back, forward, reload, URL bar)
 - **Inspect Element** — Click any element to see its tag, classes, dimensions, and accessibility info
 - **Add Element to Chat** — Send an element's full context (HTML, styles, attributes, ancestor path, React source location) to your AI agent
+- **Annotate Screenshot** — Draw arrows, shapes, callouts, and text on top of a screenshot, then send the annotated image with a prompt to your AI agent
+- **Record User Actions** — Capture clicks, inputs, scroll, and navigation as a structured JSON event log — ready to feed to an AI agent for generating automated tests
 - **Add Logs to Chat** — Capture console output (log, warn, error) from the embedded page and deliver it as context
 - **Screenshot** — Take a screenshot of the current page and send it to your AI agent
-- **Multi-backend support** — Deliver context to [OpenCode](https://opencode.ai), [OpenChamber](https://github.com/AiCodeCraft/openchamber), [Codex](https://chatgpt.com/codex), [Claude Code](https://claude.ai/code), or the clipboard
+- **Multi-agent support** — Deliver context to [OpenCode](https://opencode.ai), [OpenChamber](https://github.com/AiCodeCraft/openchamber), [Claude Code](https://claude.ai/code), [Codex](https://chatgpt.com/codex), or the clipboard
 - **Theme-aware UI** — Adapts to your VS Code light/dark theme
 
 ## How It Works
@@ -23,11 +39,23 @@ Embedded browser for sending page context to AI coding agents — inspect elemen
 Web Lens runs a local reverse proxy that loads your web app inside a VS Code webview iframe:
 
 1. A local HTTP proxy fetches target pages and injects an inspection script
-2. The inject script enables element selection, DOM extraction, console capture, and screenshot capture inside the target page
-3. When you inspect or capture context, the extension bundles it (HTML, styles, screenshot, logs) and delivers it to your selected AI backend
+2. The inject script enables element selection, DOM extraction, console capture, screenshot capture, and user action recording inside the target page
+3. When you inspect, annotate, or capture context, the extension bundles it (HTML, styles, screenshot, logs) and delivers it to your selected AI agent
 4. Context is saved as temporary files (`.txt` and `.png`) in a configurable directory, auto-cleaned after 1 hour
 
 The proxy strips `Content-Security-Policy` and `X-Frame-Options` headers so pages render correctly in the iframe.
+
+## Agent Integrations
+
+Web Lens integrates with five backends. The toolbar shows availability status for each — if the selected backend is unavailable, it falls back to the clipboard.
+
+| Agent | Extension | Delivery Method |
+|-------|-----------|-----------------|
+| **OpenCode** | `anomalyco.opencode` | HTTP API with `@file` references |
+| **OpenChamber** | `fedaykindev.openchamber` | `openchamber.addToContext` command |
+| **Claude Code** | `anthropic.claude-code` | `claude-vscode.insertAtMention` command |
+| **Codex** | `openai.chatgpt` | `chatgpt.addToThread` command |
+| **Clipboard** | — | Copies file paths to clipboard (always available) |
 
 ## Requirements
 
@@ -38,7 +66,7 @@ The proxy strips `Content-Security-Policy` and `X-Frame-Options` headers so page
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `webLens.backend` | `"clipboard"` | Active backend: `opencode`, `openchamber`, `codex`, `claudecode`, `clipboard` |
+| `webLens.backend` | `"clipboard"` | Active backend: `opencode`, `openchamber`, `claudecode`, `codex`, `clipboard` |
 | `webLens.defaultUrl` | `"http://localhost:3000"` | URL loaded when the browser panel opens |
 | `webLens.screenshotFormat` | `"png"` | Screenshot format: `png` or `jpeg` |
 | `webLens.screenshotQuality` | `0.9` | JPEG quality (0.1–1.0), ignored for PNG |
@@ -54,18 +82,20 @@ The proxy strips `Content-Security-Policy` and `X-Frame-Options` headers so page
 | **Web Lens: Add Element to Chat** | Click an element to send its context to your AI agent |
 | **Web Lens: Add Logs to Chat** | Send captured console logs to your AI agent |
 | **Web Lens: Screenshot** | Take a screenshot and send it to your AI agent |
+| **Web Lens: Toggle Recording** | Start or stop a user action recording session |
 
-## Supported Backends
+The **Annotate Screenshot** button is available directly in the browser panel toolbar.
 
-| Backend | Extension | Delivery Method |
-|---------|-----------|-----------------|
-| OpenCode | `anomalyco.opencode` | HTTP API with `@file` references |
-| OpenChamber | `fedaykindev.openchamber` | `openchamber.addToContext` command |
-| Codex | `openai.chatgpt` | `chatgpt.addToThread` command |
-| Claude Code | `anthropic.claude-code` | `claude-vscode.insertAtMention` command |
-| Clipboard | — | Copies file paths to clipboard (always available) |
+## Recording User Actions
 
-The backend selector in the toolbar shows availability status for each backend. If delivery to the selected backend fails, it falls back to the clipboard.
+Use **Web Lens: Toggle Recording** (or the record button in the toolbar) to capture what you do in the embedded browser. When you stop, the session is saved as a JSON file in `.weblens-recordings/` at your workspace root:
+
+```
+.weblens-recordings/
+  1712345678-localhost.json   ← clicks, inputs, scroll, navigation events
+```
+
+Feed this file to your AI agent to generate automated tests, reproduce bugs, or document flows.
 
 ## Troubleshooting
 

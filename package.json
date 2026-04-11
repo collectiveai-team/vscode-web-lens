@@ -4,7 +4,7 @@
   "description": "Embedded browser for sending page context to AI coding agents",
   "version": "0.2.16",
   "publisher": "collectiveai-team",
-  "icon": "media/logo/weblens-logo.png",
+  "icon": "media/logo/weblens-icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
